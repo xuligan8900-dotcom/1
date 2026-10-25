@@ -1,6 +1,18 @@
-# MEGA MECHANICAL TOWER — 50 STAGES · v4.0
+# MEGA MECHANICAL TOWER — 50 STAGES · v5.0
 
 Проект Roblox / Luau: детерминированная индустриальная башня высотой **1008 studs**, 50 этапов, 50 персональных чекпоинтов и 150 механических станций. Никаких платных моделей, пакетов Toolbox, внешних HTTP-запросов или обязательных пользовательских ассетов.
+
+## Версия5.0: монеты, косметика и поддержка
+
+Откройте **`build/MechanicalTower-v5.0.rbxlx`** из нового GitHub-архива. Кнопка **«МАГАЗИН»** справа сверху показывает монеты и открывает четыре вкладки: Следы, Победа, Титулы, Донат.
+
+- На маршруте100 персональных монет, каждая даёт5. Они восстанавливаются раз в сутки по UTC; повторная смерть или Play Again не дают собрать ту же монету второй раз в те же сутки. Монеты не исчезают для других игроков.
+- Каждый новый максимальный чекпоинт даёт20монет один раз за аккаунт. Первая победа даёт250 и титул «Покоритель башни». Прогресс, полученный до обновления, также учитывается при первом входе.
+- Каталог содержит12 предметов: следы, эффекты победы и титулы. Предмет покупается один раз и затем свободно выбирается. Бонусов к скорости, прыжку, здоровью или чекпоинтам нет.
+- Кошелёк/инвентарь сохраняются отдельно от прогресса в `MechanicalTower_Economy_v1`. Все изменения баланса выполняются атомарным UpdateAsync. В Studio по умолчанию это только данные текущей сессии, как и прогресс; косметика при этом переживает смерти внутри одного Play.
+- Подготовлены наборы поддержки на250/1000/3000монет с подарочным титулом. **Реальные продажи отключены до создания трёх Developer Products и добавления их ID.** Вкладка показывает «Скоро»; фиктивных успешных оплат нет. Цену в Robux задаёте в Creator Dashboard; итоговую стоимость подтверждает официальное окно Roblox.
+
+**Подключение доната:** [docs/MONETIZATION.md](docs/MONETIZATION.md). Код обработки квитанций готов; создание продуктов в аккаунте и проверка реальной оплаты не выполнены. Автотесты используют настоящие модули правил/обработчика с имитацией хранилища, а не Roblox checkout.
 
 ## Версия4.0: маршруты для бега и баланса
 
@@ -54,7 +66,7 @@
 5. Следуйте неоновым полосам и стрелкам. Зелёный/жёлтый/красный сигнал обозначает состояние ловушки; зелёные вращающиеся детали безопасны, красные опасны. На каждом этапе есть безопасные остановки на узлах 4 и 8.
 6. Падение не телепортирует на чекпоинт: открытое страховочное перекрытие останавливает падение внутри башни, от него можно подниматься снова. Смерть от красной ловушки или нижней KillZone возвращает на последний чекпоинт текущего забега. Через меню Roblox можно использовать Reset Character.
 
-**Проверено в облаке:** компиляция Luau, 8997 автоматических проверок чистых модулей, сборка Rojo и структура XML. **Roblox Studio здесь не запускался.** Приложен готовый place и автоматическая Studio-диагностика; физику, игровой баланс, сетевую задержку, DataStore и мобильный HUD необходимо проверить по [docs/TESTING.md](docs/TESTING.md) перед публикацией. Это реализованный проект для дальнейшего Studio playtest, а не заявление о завершённой сертификации всех 50 этажей.
+**Проверено в облаке:** компиляция Luau, 9370 автоматических проверок чистых модулей, сборка Rojo и структура XML. **Roblox Studio здесь не запускался.** Приложен готовый place и автоматическая Studio-диагностика; физику, игровой баланс, сетевую задержку, DataStore и мобильный HUD необходимо проверить по [docs/TESTING.md](docs/TESTING.md) перед публикацией. Это реализованный проект для дальнейшего Studio playtest, а не заявление о завершённой сертификации всех 50 этажей.
 
 ## Редактирование исходников через Rojo
 
@@ -108,18 +120,20 @@ python3 tools/verify.py
 ```text
 src/shared/       GameConfig, StageDefinitions, Route, TrapDefinitions,
                   TrapMotion, MotionMath, ProgressRules, DataSchema,
-                  RecoveryRules, Difficulty, TrapGeometry, Numeric, Traversal
+                  RecoveryRules, Difficulty, TrapGeometry, Numeric, Traversal,
+                  CosmeticCatalog, EconomyRules, ReceiptProcessor
 src/server/       GameBootstrap, TowerGenerator, StageBuilder, BuildUtil,
                   TrapFactory, TrapController, CheckpointService,
-                  PlayerDataService, RespawnService, RecoveryService, TraversalBuilder
+                  PlayerDataService, RespawnService, RecoveryService, TraversalBuilder,
+                  CoinService, EconomyService, CosmeticService, CommerceConfig
 src/client/       MechanismClient, HUDController, EffectsController, RecoveryController,
-                  StartupController
+                  StartupController, CoinController, ShopController, CosmeticEffects
 tests/run.luau    самостоятельные тесты маршрутов, прогресса, merge данных
 tests/studio/    Smoke — автоматически запускается только в Studio
 tools/           закреплённые инструменты, компиляция, сборка, отчёт
 ```
 
-Все GUI и RemoteEvent создаются программно. Tower появляется в `Workspace/GeneratedTower` с папками Foundation, StructuralSupports, Stages, Checkpoints, KillZones, FinishArea, RouteGates, RecoveryFloors. Перезапуск генератора в той же сессии возвращает готовую башню; незавершённая генерация вызывает явную ошибку вместо дубликатов.
+Все GUI и RemoteEvent создаются программно. Tower появляется в `Workspace/GeneratedTower` с папками Foundation, StructuralSupports, Stages, Checkpoints, KillZones, FinishArea, RouteGates, RecoveryFloors, CollectibleCoins. Перезапуск генератора в той же сессии возвращает готовую башню; незавершённая генерация вызывает явную ошибку вместо дубликатов.
 
 Подробности механик и изменения этажей: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Перечень всех 50 конфигураций: [docs/STAGES.md](docs/STAGES.md).
 

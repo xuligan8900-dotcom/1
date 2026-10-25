@@ -3,6 +3,7 @@ local RunService=game:GetService("RunService")
 local Shared=game:GetService("ReplicatedStorage").Shared
 local Rules=require(Shared.ProgressRules)
 local Recovery=require(script.Parent.RecoveryService)
+local Economy=require(script.Parent.EconomyService)
 local Service={}
 function Service.publish(player,p)
 	Recovery.update(player,p)
@@ -57,6 +58,11 @@ function Service.start(tower,data,remotes)
 				data.mark(p)
 				Service.publish(player,p)
 				remotes.CheckpointNotification:FireClient(player,stage)
+				local victoryCF=if p.Won then root.CFrame else nil
+				task.spawn(function()
+					Economy.stage(player,stage)
+					if victoryCF then Economy.victory(player,victoryCF) end
+				end)
 				if p.Won then
 					remotes.VictoryEvent:FireClient(player,p.FinishTime,p.FullRun)
 					task.spawn(data.save,player)

@@ -1,0 +1,2799 @@
+<roblox version="4">
+  <Item class="Lighting" referent="0">
+    <Properties>
+      <string name="Name">Lighting</string>
+      <Color3 name="Ambient">
+        <R>0.65</R>
+        <G>0.69</G>
+        <B>0.76</B>
+      </Color3>
+      <float name="Brightness">3.2</float>
+      <float name="ClockTime">13.5</float>
+      <float name="EnvironmentDiffuseScale">1</float>
+      <float name="EnvironmentSpecularScale">0.5</float>
+      <bool name="GlobalShadows">false</bool>
+      <Color3 name="OutdoorAmbient">
+        <R>0.76</R>
+        <G>0.8</G>
+        <B>0.86</B>
+      </Color3>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="1">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="2">
+      <Properties>
+        <string name="Name">Shared</string>
+      </Properties>
+      <Item class="ModuleScript" referent="3">
+        <Properties>
+          <string name="Name">CosmeticCatalog</string>
+          <string name="Source"><![CDATA[--!strict
+-- Cosmetic only: no item changes movement, collisions, health or checkpoints.
+local items={
+	{Id="trail_none",Category="Trail",Name="Без следа",Price=0,Color={150,160,175}},
+	{Id="trail_cyan",Category="Trail",Name="Ионный след",Price=150,Color={65,220,255}},
+	{Id="trail_amber",Category="Trail",Name="След кузницы",Price=350,Color={255,175,45}},
+	{Id="trail_prism",Category="Trail",Name="Призма",Price=750,Color={210,100,255},SecondColor={70,240,230}},
+	{Id="fx_default",Category="Victory",Name="Конфетти",Price=0,Color={70,220,255}},
+	{Id="fx_gold",Category="Victory",Name="Золотой салют",Price=400,Color={255,205,60}},
+	{Id="fx_prism",Category="Victory",Name="Неоновая вспышка",Price=800,Color={205,95,255},SecondColor={60,240,230}},
+	{Id="title_rookie",Category="Title",Name="Новичок",Price=0,Color={170,190,215}},
+	{Id="title_runner",Category="Title",Name="Паркурщик",Price=200,Color={70,230,180}},
+	{Id="title_engineer",Category="Title",Name="Инженер башни",Price=600,Color={255,180,70}},
+	{Id="title_master",Category="Title",Name="Покоритель башни",Price=0,RequiredWin=true,Color={150,245,255}},
+	{Id="title_supporter",Category="Title",Name="Поддержка проекта",Price=0,RequiredSupport=true,Color={255,150,220}},
+}
+local byId={}
+for _,item in items do byId[item.Id]=table.freeze(item) end
+return table.freeze({Items=items,ById=byId,Defaults={Trail="trail_none",Victory="fx_default",Title="title_rookie"}})
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
+          <string name="Name">DataSchema</string>
+          <string name="Source"><![CDATA[--!strict
+local Schema={}
+function Schema.sanitize(value)
+	if type(value)~="table" then return {MaxStage=0,Completed=false,BestTime=nil} end
+	local stage=tonumber(value.MaxStage) or 0
+	if stage~=stage then stage=0 end
+	local best=tonumber(value.BestTime)
+	if best and (best~=best or best<=0 or best==math.huge) then best=nil end
+	stage=math.clamp(math.floor(stage),0,50)
+	return {MaxStage=stage,Completed=value.Completed==true or stage==50,BestTime=best}
+end
+function Schema.merge(old,snapshot)
+	local merged=Schema.sanitize(old)
+	local incoming=Schema.sanitize(snapshot)
+	merged.MaxStage=math.max(merged.MaxStage,incoming.MaxStage)
+	merged.Completed=merged.Completed or incoming.Completed
+	if incoming.BestTime then merged.BestTime=math.min(merged.BestTime or math.huge,incoming.BestTime) end
+	merged.Version=1
+	return merged
+end
+return table.freeze(Schema)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="5">
+        <Properties>
+          <string name="Name">Difficulty</string>
+          <string name="Source"><![CDATA[--!strict
+local Difficulty={}
+function Difficulty.trap(definition,stage,station)
+	local result=table.clone(definition)
+	local overrides=stage.TrapOverrides and stage.TrapOverrides[station]
+	if overrides then
+		for key,value in overrides do
+			assert(definition[key]~=nil and type(value)==type(definition[key]),"Invalid trap override "..key)
+			result[key]=value
+		end
+	end
+	local progress=(stage.Id-1)/49
+	result.Speed*=stage.Speed*(1+(station-2)*0.07)*(1+0.25*progress)
+	-- Every harmful family now has a genuine green crossing window.
+	-- Wider gaps demand time for two jumps, not just a short dash across a deck.
+	local greenSeconds=4.8-1.2*progress
+	-- Stage 15 follows checkpoint 14: teach the blade rhythm without a speed wall.
+	if stage.Id==15 then greenSeconds=5.5; result.Speed*=0.85 end
+	if result.Motion=="fade" then greenSeconds+=0.5 end
+	result.Safe=math.max(greenSeconds*result.Speed,result.Safe*(1-0.1*progress))
+	result.Warning=math.max(1.2*result.Speed,result.Warning)
+	result.Active*=1+0.2*progress
+	return result
+end
+return table.freeze(Difficulty)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="6">
+        <Properties>
+          <string name="Name">EconomyRules</string>
+          <string name="Source"><![CDATA[--!strict
+-- Pure atomic transitions. UpdateAsync may replay these without side effects.
+local Rules={CoinValue=5,StageValue=20,FirstWinValue=250,MaxPack=100000,MaxCoins=9000000000000}
+local function integer(value,maximum)
+	if type(value)~="number" or value~=value or value==math.huge then return 0 end
+	return math.clamp(math.floor(value),0,maximum)
+end
+function Rules.validCoin(id)
+	if type(id)~="string" then return false end
+	local stage,node=string.match(id,"^(%d+)_(%d+)$")
+	stage,node=tonumber(stage),tonumber(node)
+	return stage~=nil and stage>=1 and stage<=50 and (node==4 or node==8) and id==stage.."_"..node
+end
+function Rules.sanitize(old,catalog)
+	old=if type(old)=="table" then old else {}
+	local state={Version=1,Revision=integer(old.Revision,Rules.MaxCoins),Coins=integer(old.Coins,Rules.MaxCoins),StageRewardMax=integer(old.StageRewardMax,50),
+		Day=integer(old.Day,1000000),Collected={},Receipts={},Owned={},Equipped={},
+		WinRewarded=old.WinRewarded==true,Supporter=old.Supporter==true}
+	if type(old.Collected)=="table" then
+		for id,value in old.Collected do if value==true and Rules.validCoin(id) then state.Collected[id]=true end end
+	end
+	if type(old.Receipts)=="table" then
+		for id,value in old.Receipts do
+			if type(id)=="string" and #id>0 and #id<=128 and value==true then state.Receipts[id]=true end
+		end
+	end
+	for _,item in catalog.Items do
+		local owned=type(old.Owned)=="table" and old.Owned[item.Id]==true
+		if owned or catalog.Defaults[item.Category]==item.Id then state.Owned[item.Id]=true end
+	end
+	if state.WinRewarded then state.Owned.title_master=true end
+	if state.Supporter then state.Owned.title_supporter=true end
+	for category,default in catalog.Defaults do
+		local id=type(old.Equipped)=="table" and old.Equipped[category] or default
+		local item=catalog.ById[id]
+		state.Equipped[category]=if item and item.Category==category and state.Owned[id] then id else default
+	end
+	return state
+end
+function Rules.apply(old,command,catalog)
+	local state=Rules.sanitize(old,catalog)
+	if command.Kind=="collect" then
+		if not Rules.validCoin(command.Id) or type(command.Day)~="number" or command.Day%1~=0 or command.Day<state.Day then return state,"invalid" end
+		if command.Day>state.Day then state.Day=command.Day; state.Collected={} end
+		if state.Collected[command.Id] then return state,"duplicate" end
+		if state.Coins>Rules.MaxCoins-Rules.CoinValue then return state,"balance_limit" end
+		state.Collected[command.Id]=true
+		state.Coins+=Rules.CoinValue
+	elseif command.Kind=="stage" then
+		local reached=integer(command.Stage,50)
+		local count=math.max(0,reached-state.StageRewardMax)
+		if count==0 then return state,"duplicate" end
+		if state.Coins>Rules.MaxCoins-count*Rules.StageValue then return state,"balance_limit" end
+		state.Coins+=count*Rules.StageValue
+		state.StageRewardMax=reached
+	elseif command.Kind=="win" then
+		if state.WinRewarded then return state,"duplicate" end
+		if state.Coins>Rules.MaxCoins-Rules.FirstWinValue then return state,"balance_limit" end
+		state.Coins+=Rules.FirstWinValue
+		state.WinRewarded=true
+		state.Owned.title_master=true
+	elseif command.Kind=="receipt" then
+		if type(command.Id)~="string" or #command.Id==0 or #command.Id>128 then return state,"invalid" end
+		if state.Receipts[command.Id] then return state,"duplicate" end
+		if type(command.Amount)~="number" or command.Amount%1~=0 or command.Amount<=0 or command.Amount>Rules.MaxPack then return state,"invalid" end
+		if state.Coins>Rules.MaxCoins-command.Amount then return state,"balance_limit" end
+		-- Receipt marker and grant are written to the SAME user key atomically.
+		state.Coins+=command.Amount
+		state.Receipts[command.Id]=true
+		state.Supporter=true
+		state.Owned.title_supporter=true
+	elseif command.Kind=="buy" or command.Kind=="equip" then
+		local item=catalog.ById[command.Id]
+		if not item then return state,"invalid" end
+		if item.RequiredWin and not state.WinRewarded then return state,"requires_win" end
+		if item.RequiredSupport and not state.Supporter then return state,"requires_support" end
+		if not state.Owned[item.Id] then
+			if command.Kind=="equip" then return state,"not_owned" end
+			if state.Coins<item.Price then return state,"not_enough_coins" end
+			state.Coins-=item.Price
+			state.Owned[item.Id]=true
+		end
+		state.Equipped[item.Category]=item.Id
+	else return state,"invalid" end
+	state.Revision+=1
+	return state,"ok"
+end
+return table.freeze(Rules)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="7">
+        <Properties>
+          <string name="Name">GameConfig</string>
+          <string name="Source"><![CDATA[--!strict
+return table.freeze({
+	Title = "MEGA MECHANICAL TOWER",
+	StageCount = 50,
+	StageHeight = 20,
+	BaseHeight = 8,
+	Radius = 42,
+	WalkSpeed = 16,
+	JumpPower = 50,
+	Gravity = 196.2,
+	DataStoreName = "MechanicalTower_Progress_v1",
+	SaveInterval = 30,
+	SaveDebounce = 8,
+	-- Studio defaults to session-only data. Enable deliberately on a separate test place.
+	StudioPersistence = false,
+	ZoneNames = {"STEELWORKS", "TURBINE GARDENS", "FOUNDRY", "REACTOR", "NEON CROWN"},
+	ZoneColors = {
+		Color3.fromRGB(70, 184, 255), Color3.fromRGB(40, 235, 180),
+		Color3.fromRGB(255, 181, 45), Color3.fromRGB(218, 74, 211),
+		Color3.fromRGB(110, 240, 255),
+	},
+})
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">MotionMath</string>
+          <string name="Source"><![CDATA[--!strict
+-- Engine-independent deterministic oscillator used by the actual server/client controller.
+local Math={}
+function Math.sample(mode,t,safe,warning,active,travel)
+	local cycle=t%(safe+warning+active)
+	local state=if cycle<safe then "safe" elseif cycle<safe+warning then "warning" else "active"
+	local pulse=if state=="active" then math.sin((cycle-safe-warning)/active*math.pi) else 0
+	local amount,orbitZ,angle=0,0,0
+	if mode=="slide" or mode=="lift" then amount=math.sin(t)*travel
+	elseif mode=="orbit" then amount=math.sin(t)*travel; orbitZ=math.cos(t)*travel
+	elseif mode=="pulse" or mode=="press" then amount=pulse*travel
+	elseif mode=="spin" or mode=="ring" then angle=t
+	elseif mode=="swing" then angle=math.sin(t)*0.68
+	elseif mode=="door" then
+		if state=="safe" then amount=travel
+		elseif state=="warning" then
+			local closing=(cycle-safe)/warning
+			amount=travel*(1-(closing*closing*(3-2*closing)))
+		else
+			local opening=math.clamp(((cycle-safe-warning)/active-0.55)/0.45,0,1)
+			amount=travel*(opening*opening*(3-2*opening))
+		end
+	end
+	return amount,orbitZ,angle,state,state=="active"
+end
+return table.freeze(Math)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="9">
+        <Properties>
+          <string name="Name">Numeric</string>
+          <string name="Source"><![CDATA[--!strict
+local Numeric={}
+function Numeric.near(a,b,tolerance)
+	-- Roblox Vector3/Part.Size use float32, whereas Luau literals use doubles.
+	return math.abs(a-b)<=(tolerance or 0.001)
+end
+return table.freeze(Numeric)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="10">
+        <Properties>
+          <string name="Name">ProgressRules</string>
+          <string name="Source"><![CDATA[--!strict
+-- No client input participates in this transition. Pure functions are tested outside Studio.
+local Rules={}
+function Rules.canCheckpoint(profile, stage)
+	return not profile.Won and stage==profile.RunStage+1 and stage>=1 and stage<=50
+end
+function Rules.onPad(x,y,z,width,depth)
+	return math.abs(x)<=width/2+0.75 and math.abs(z)<=depth/2+0.75 and y>=-0.5 and y<=6
+end
+function Rules.advance(profile, stage, now)
+	profile.RunStage=stage
+	profile.MaxStage=math.max(profile.MaxStage,stage)
+	profile.Gate=0
+	profile.StageEntered=now
+	if stage==50 then
+		profile.Won=true
+		profile.Completed=true
+	end
+end
+function Rules.replay(profile, serverTime, monotonicTime)
+	if not profile.Won or monotonicTime-profile.LastReplay<3 then return false end
+	profile.LastReplay=monotonicTime
+	profile.RunStage=0
+	profile.Won=false
+	profile.Gate=0
+	profile.StartedAt=serverTime
+	profile.FullRun=true
+	profile.FinishTime=nil
+	profile.StageEntered=monotonicTime
+	return true
+end
+return table.freeze(Rules)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="11">
+        <Properties>
+          <string name="Name">ReceiptProcessor</string>
+          <string name="Source"><![CDATA[--!strict
+-- Engine-independent adapter used directly by MarketplaceService.ProcessReceipt.
+-- Grant must return success ONLY after the atomic balance+receipt write completes.
+local Processor={}
+function Processor.process(receipt,context)
+	if type(receipt)~="table" or type(receipt.ProductId)~="number" or type(receipt.PlayerId)~="number" or receipt.PlayerId<=0 or receipt.PlayerId%1~=0 or receipt.ProductId%1~=0 or type(receipt.PurchaseId)~="string" or #receipt.PurchaseId==0 or #receipt.PurchaseId>128 then
+		return "NotProcessedYet","invalid_receipt"
+	end
+	local product=context.Products[receipt.ProductId]
+	if not product then return "NotProcessedYet","unknown_product" end
+	local player=context.GetPlayer(receipt.PlayerId)
+	if not player or not context.IsLoaded(player) or not context.Durable then return "NotProcessedYet","not_ready" end
+	local returned,committed,status=pcall(context.Grant,player,{Kind="receipt",Id=receipt.PurchaseId,Amount=product.Coins})
+	if returned and committed and (status=="ok" or status=="duplicate") then return "PurchaseGranted",status end
+	return "NotProcessedYet",if returned then status else "write_error"
+end
+return table.freeze(Processor)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="12">
+        <Properties>
+          <string name="Name">RecoveryRules</string>
+          <string name="Source"><![CDATA[--!strict
+-- A completed group of five unlocks its physical catch floor for that player.
+-- Floors are below the checkpoint; enabling collision never intersects a climber.
+local Rules={Interval=5,FloorCount=9}
+function Rules.section(stage)
+	return math.clamp(math.floor(stage/Rules.Interval),0,Rules.FloorCount)
+end
+function Rules.canStandOn(section,floorIndex)
+	return floorIndex>=1 and floorIndex<=Rules.FloorCount and section>=floorIndex
+end
+function Rules.floorHeight(floorIndex)
+	return 8+floorIndex*Rules.Interval*20-10
+end
+function Rules.playerGroup(section) return "TowerPlayer_"..section end
+function Rules.floorGroup(floorIndex) return "TowerFloor_"..floorIndex end
+return table.freeze(Rules)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="13">
+        <Properties>
+          <string name="Name">Route</string>
+          <string name="Source"><![CDATA[--!strict
+-- Pure route math is shared by generation and the standalone Luau tests.
+local Route = {}
+local profiles = {
+	wide = {0,0,1,2,1,0,-1,-2,-1,0,1,0,0},
+	weave = {0,1,3,1,0,-2,-3,-1,0,2,3,1,0},
+	arc = {0,0,0,0,0,0,0,0,0,0,0,0,0},
+	outer = {0,1,2,3,3,3,3,3,3,3,2,1,0},
+	inner = {0,-1,-2,-3,-3,-3,-3,-3,-3,-3,-2,-1,0},
+	beams = {0,0,1,1,0,0,-1,-1,0,0,1,1,0},
+	zigzag = {0,2,0,-2,0,2,0,-2,0,2,0,-2,0},
+	columns = {0,1,1,0,-1,-1,0,1,1,0,-1,-1,0},
+	islands = {0,-1,-2,-1,0,1,2,1,0,-1,-2,-1,0},
+	maze = {0,1,2,2,1,0,-1,-2,-2,-1,0,1,0},
+	needles = {0,1,0,-1,0,1,0,-1,0,1,0,-1,0},
+	crown = {0,-1,-2,-3,-3,-2,-1,0,1,2,2,1,0},
+}
+function Route.point(stage, node, layout)
+	local profile = assert(profiles[layout], "Unknown layout")
+	local angle = ((stage - 1) * math.pi / 2) + node / 12 * math.pi / 2
+	local radius = 42 + profile[node + 1]
+	return radius * math.cos(angle), 8 + (stage - 1) * 20 + node * 20 / 12, radius * math.sin(angle)
+end
+function Route.width(stage, node, layout)
+	if node % 4 == 0 then return 5.2 end
+	if layout == "needles" then return 2.2 end
+	if layout == "beams" then return 2.6 end
+	if layout == "islands" then return 3.1 end
+	return math.max(2.8,4.2-stage*0.03)
+end
+function Route.depth(stage,node)
+	if node%4==0 then return 2.8 end
+	return math.max(2.5,3.0-stage*0.01)
+end
+function Route.carrierSize(stage)
+	return math.max(3.8,4.8-stage*0.02),math.max(2.8,3.3-stage*0.01)
+end
+function Route.validate(definitions)
+	assert(#definitions == 50, "Exactly 50 stages required")
+	local signatures = {}
+	for i, stage in definitions do
+		assert(stage.Id == i)
+		local signature = stage.Layout .. table.concat(stage.Traps, ",") .. tostring(stage.Speed)
+		assert(not signatures[signature], "Duplicate stage configuration")
+		signatures[signature] = true
+		for n = 1, 12 do
+			local x,y,z = Route.point(i,n,stage.Layout)
+			local px,py,pz = Route.point(i,n-1,stage.Layout)
+			local horizontal = math.sqrt((x-px)^2 + (z-pz)^2)
+			assert(horizontal <= 6.6, "Route exceeds conservative jump envelope")
+			assert(y > py and y-py < 2, "Invalid rise")
+			assert(math.abs(x) < 46 and math.abs(z) < 46, "Structural collision")
+		end
+		if i < 50 then
+			local x,y,z = Route.point(i,12,stage.Layout)
+			local nx,ny,nz = Route.point(i+1,0,definitions[i+1].Layout)
+			assert(math.abs(x-nx)+math.abs(y-ny)+math.abs(z-nz) < 0.001, "Disconnected stages")
+		end
+	end
+	return true
+end
+return table.freeze(Route)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="14">
+        <Properties>
+          <string name="Name">StageDefinitions</string>
+          <string name="Source"><![CDATA[--!strict
+-- Each row defines actual geometry and three mechanism stations (nodes 2, 6, 10).
+-- Layouts are deliberately explicit: edits to one stage never randomize the others.
+local rows = {
+	{"First Steps", "pusher", "move", "door", "wide", 0.78},
+	{"Transfer Line", "move", "move", "move", "weave", 0.80},
+	{"Slow Sweep", "rotor", "rotor", "rotor", "arc", 0.65},
+	{"Beam Induction", "laser", "laser", "door", "outer", 0.80},
+	{"Vanishing Steel", "fade", "fade", "timer", "inner", 0.82},
+	{"Balance Beams", "pusher", "rotor", "pusher", "beams", 0.75},
+	{"Hammer School", "pendulum", "pendulum", "pendulum", "weave", 0.72},
+	{"Belt Works", "conveyor", "conveyor", "pusher", "wide", 0.84},
+	{"Piston Elevators", "lift", "lift", "lift", "arc", 0.78},
+	{"First Assembly", "move", "rotor", "move", "outer", 0.88},
+	{"Gear Teeth", "gear", "gear", "gear", "inner", 0.82},
+	{"Timed Beams", "laser", "door", "laser", "zigzag", 0.90},
+	{"Orbital Transfer", "orbit", "orbit", "orbit", "arc", 0.85},
+	{"Hydraulic Hall", "press", "press", "press", "wide", 0.84},
+	{"Blade Foundry", "blade", "blade", "rotor", "outer", 0.88},
+	{"Walking Columns", "lift", "move", "lift", "columns", 0.94},
+	{"Side Impact", "pusher", "pusher", "pusher", "beams", 0.96},
+	{"Pendulum Gap", "pendulum", "pendulum", "move", "inner", 0.98},
+	{"Short Circuit", "timer", "fade", "timer", "zigzag", 1.00},
+	{"Mechanical Gauntlet", "gear", "press", "laser", "weave", 1.00},
+	{"Twin Sweep", "doubleRotor", "doubleRotor", "rotor", "outer", 1.02},
+	{"Safe Sectors", "gear", "ring", "gear", "arc", 1.00},
+	{"Laser Pattern", "laser", "laser", "laser", "wide", 1.05},
+	{"Asynchronous Transit", "move", "orbit", "move", "zigzag", 1.04},
+	{"Press Sequence", "press", "press", "press", "inner", 1.08},
+	{"Open Air", "move", "pusher", "lift", "islands", 1.04},
+	{"Ring Gates", "ring", "ring", "ring", "outer", 1.04},
+	{"Belt and Ram", "conveyor", "pusher", "conveyor", "beams", 1.06},
+	{"Shifting Maze", "door", "pusher", "door", "maze", 1.08},
+	{"Clockwork Room", "press", "laser", "rotor", "weave", 1.10},
+	{"Fast Sweep", "rotor", "doubleRotor", "rotor", "arc", 1.18},
+	{"Fading Beams", "fade", "laser", "timer", "zigzag", 1.12},
+	{"Elevator Exchange", "lift", "lift", "orbit", "columns", 1.12},
+	{"Heavy Hammers", "pendulum", "pendulum", "pendulum", "wide", 1.12},
+	{"Needle Walk", "rotor", "pusher", "door", "needles", 1.12},
+	{"Danger Orbit", "gear", "blade", "orbit", "outer", 1.14},
+	{"Pressure Windows", "press", "press", "press", "inner", 1.20},
+	{"Mechanical Arms", "pusher", "pusher", "doubleRotor", "maze", 1.16},
+	{"Temporary Route", "timer", "timer", "timer", "islands", 1.18},
+	{"Grand Assembly", "pendulum", "gear", "press", "weave", 1.20},
+	{"Rotor Convergence", "doubleRotor", "ring", "gear", "zigzag", 1.20},
+	{"Photon Windows", "laser", "laser", "laser", "beams", 1.22},
+	{"Vertical Network", "lift", "orbit", "lift", "columns", 1.18},
+	{"Titan Machinery", "gear", "pendulum", "rotor", "outer", 1.20},
+	{"Alternating Chamber", "door", "press", "laser", "maze", 1.22},
+	{"Fading Heights", "fade", "timer", "fade", "islands", 1.22},
+	{"Synchronized Steel", "press", "move", "press", "arc", 1.24},
+	{"Last Gauntlet", "conveyor", "doubleRotor", "pendulum", "weave", 1.22},
+	{"Master Mechanic", "gear", "press", "laser", "needles", 1.24},
+	{"Crown Ascent", "lift", "ring", "door", "crown", 1.05},
+}
+-- Surface topology is configured independently from traps and radial layout.
+local traversal={
+	[6]="rails",[8]="zigzag",[12]="zigzag",[16]="posts",[17]="rails",
+	[18]="pipes",[22]="zigzag",[26]="posts",[28]="pipes",[29]="wrap",
+	[31]="rails",[33]="posts",[35]="needles",[38]="wrap",[39]="posts",
+	[41]="zigzag",[43]="pipes",[45]="wrap",[46]="rails",[48]="zigzag",[49]="needles",
+}
+local definitions = {}
+for i, row in rows do
+	definitions[i] = table.freeze({
+		Id = i, Name = row[1], Traps = {row[2], row[3], row[4]},
+		Layout = row[5], Speed = row[6], Zone = math.ceil(i / 10),
+		Traversal = traversal[i] or "jumps",
+		-- Different phase offsets are deterministic, never randomized at runtime.
+		Phase = (i * 0.37) % 3,
+	})
+end
+return table.freeze(definitions)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="15">
+        <Properties>
+          <string name="Name">TrapDefinitions</string>
+          <string name="Source"><![CDATA[--!strict
+-- Period = safe + warning + active. Motion never uses random state.
+local definitions = {
+	move = {Motion="slide", Carry=true, Travel=1.8, Speed=0.65},
+	lift = {Motion="lift", Carry=true, Travel=2.2, Speed=0.6},
+	orbit = {Motion="orbit", Carry=true, Travel=1.4, Speed=0.7},
+	rotor = {Motion="spin", Damage=100, Speed=0.7},
+	doubleRotor = {Motion="spin", Damage=100, Speed=0.8},
+	gear = {Motion="spin", Carry=true, Speed=0.6},
+	blade = {Motion="spin", Damage=100, Speed=0.85},
+	pendulum = {Motion="swing", Damage=100, Speed=0.85},
+	pusher = {Motion="pulse", Travel=6, Push=32, Speed=1},
+	press = {Motion="press", Travel=9, Damage=100, Speed=1},
+	laser = {Motion="gate", Damage=100, Speed=1},
+	fade = {Motion="fade", Carry=true, Speed=1},
+	timer = {Motion="fade", Carry=true, Speed=1.15},
+	conveyor = {Motion="belt", Carry=true, BeltSpeed=5, Speed=1},
+	ring = {Motion="ring", Damage=100, Speed=0.65},
+	door = {Motion="door", Travel=8, Speed=1},
+}
+for _, definition in definitions do
+	definition.Size = 1 -- Uniform model scale; regenerate after changing.
+	definition.SoundEnabled = true
+	definition.DirectionX = if definition.Motion=="slide" or definition.Motion=="pulse" then 1 else 0
+	definition.DirectionY = if definition.Motion=="lift" or definition.Motion=="spin" then 1 elseif definition.Motion=="press" then -1 else 0
+	definition.DirectionZ = if definition.Motion=="ring" or definition.Motion=="swing" then 1 elseif definition.Motion=="belt" then -1 else 0
+	definition.Safe = 3.8
+	definition.Warning = 1.1
+	definition.Active = 1.5
+	definition.Damage = definition.Damage or 0
+	definition.Push = definition.Push or 0
+	definition.Travel = definition.Travel or 0
+	definition.Carry = definition.Carry or false
+	table.freeze(definition)
+end
+return table.freeze(definitions)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="16">
+        <Properties>
+          <string name="Name">TrapGeometry</string>
+          <string name="Source"><![CDATA[--!strict
+-- Sizes used by the factory and clearance regression tests (all in studs).
+return table.freeze({
+	SweepLength=6.2,
+	SweepThickness=0.4,
+	SweepHeight=1.25,
+	BladeLength=2.8,
+	BladeCenter=1.55,
+	GearDiameter=5.8,
+	GearToothRadius=3.15,
+	-- Body clearance measured from the platform, excluding decorative piston rods.
+	AvatarHeight=6,
+	PressRestHeight=10,
+	PressHalfHeight=0.75,
+	DoorRestCenter=3.2,
+	DoorHalfHeight=3,
+})
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="17">
+        <Properties>
+          <string name="Name">TrapMotion</string>
+          <string name="Source"><![CDATA[--!strict
+local Math=require(script.Parent.MotionMath)
+local Motion = {}
+function Motion.evaluate(model, now)
+	local base=model:GetAttribute("Base")
+	local t=now*model:GetAttribute("Speed")+model:GetAttribute("Phase")
+	local direction=model:GetAttribute("Direction")
+	local mode=model:GetAttribute("Motion")
+	local amount,orbitZ,angle,state,danger=Math.sample(mode,t,
+		model:GetAttribute("Safe"),model:GetAttribute("Warning"),model:GetAttribute("Active"),model:GetAttribute("Travel"))
+	local cf=base
+	if mode=="slide" or mode=="lift" or mode=="pulse" or mode=="press" then cf=base*CFrame.new(direction*amount)
+	elseif mode=="orbit" then cf=base*CFrame.new(amount,0,orbitZ)
+	elseif mode=="spin" or mode=="ring" or mode=="swing" then cf=base*CFrame.fromAxisAngle(direction,angle)
+	elseif mode=="door" then cf=base*CFrame.new(0,amount,0)
+	end
+	return cf,state,danger
+end
+function Motion.apply(model, now)
+	local cf,state,danger = Motion.evaluate(model,now)
+	model:PivotTo(cf)
+	if model:GetAttribute("VisualState") ~= state then
+		model:SetAttribute("VisualState",state)
+		for _,p in model:GetDescendants() do
+			if p:IsA("BasePart") then
+				if p:GetAttribute("Signal") then
+					p.Color = if state == "warning" then Color3.fromRGB(255,190,40)
+						elseif danger then Color3.fromRGB(255,65,70) else Color3.fromRGB(60,230,170)
+				end
+				if model:GetAttribute("Motion") == "fade" then
+					p.CanCollide = state ~= "active" and p:GetAttribute("TowerSolid")==true
+					p.CanQuery = p.CanCollide
+					p.Transparency = if state == "active" then 0.92 elseif state == "warning" then 0.45 else 0.05
+				end
+			end
+		end
+	end
+	return danger
+end
+return Motion
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="18">
+        <Properties>
+          <string name="Name">Traversal</string>
+          <string name="Source"><![CDATA[--!strict
+-- Pure, deterministic walking paths. Mechanism nodes 2/6/10 stay isolated:
+-- no bridge bypasses a moving/fading platform or its required landing jump.
+local Traversal={}
+local edges={{0,1},{3,4},{4,5},{7,8},{8,9},{11,12}}
+function Traversal.width(stage)
+	if stage.Traversal=="needles" then return 0.95 end
+	if stage.Traversal=="pipes" then return 1.35 end
+	return if stage.Id<=20 then 1.5 else 1.25
+end
+function Traversal.node(stage,node,baseWidth,baseDepth)
+	local style=stage.Traversal or "jumps"
+	if node%2==0 or style=="jumps" then return baseWidth,baseDepth,"deck" end
+	if style=="posts" then
+		local diameter=if stage.Id<30 then 2.8 else 2.5
+		return diameter,diameter,"post"
+	end
+	-- Preserve flat waiting pads immediately before each trap.
+	if node%4==1 then return math.max(3,baseWidth),baseDepth,"deck" end
+	if style=="wrap" then return 3.2,2.5,"deck" end
+	local width=Traversal.width(stage)
+	return width,math.max(width,1.5),"joint"
+end
+local function interpolate(a,b,t,offset)
+	local x=a.x+(b.x-a.x)*t
+	local z=a.z+(b.z-a.z)*t
+	local length=math.sqrt(x*x+z*z)
+	return {x=x+x/length*offset,y=a.y+(b.y-a.y)*t,z=z+z/length*offset}
+end
+function Traversal.paths(stage,route)
+	local style=stage.Traversal or "jumps"
+	if style=="jumps" or style=="posts" then return {} end
+	local result={}
+	for index,edge in edges do
+		local ax,ay,az=route.point(stage.Id,edge[1],stage.Layout)
+		local bx,by,bz=route.point(stage.Id,edge[2],stage.Layout)
+		local a,b={x=ax,y=ay,z=az},{x=bx,y=by,z=bz}
+		local points={a}
+		local column=nil
+		if style=="zigzag" then
+			table.insert(points,interpolate(a,b,0.5,if index%2==0 then -1.8 else 1.8))
+		elseif style=="wrap" and edge[1]%4==3 then
+			table.insert(points,interpolate(a,b,0.28,3.6))
+			table.insert(points,interpolate(a,b,0.72,3.6))
+			column=interpolate(a,b,0.5,0)
+		end
+		table.insert(points,b)
+		table.insert(result,{From=edge[1],To=edge[2],Points=points,Width=Traversal.width(stage),
+			Shape=if style=="pipes" then "pipe" else "beam",Column=column})
+	end
+	return result
+end
+return table.freeze(Traversal)
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="19">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="20">
+      <Properties>
+        <string name="Name">TowerServer</string>
+      </Properties>
+      <Item class="ModuleScript" referent="21">
+        <Properties>
+          <string name="Name">BuildUtil</string>
+          <string name="Source"><![CDATA[--!strict
+local Util = {}
+function Util.part(parent, name, size, cf, color, material, collide)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Size = size
+	part.CFrame = cf
+	part.Color = color or Color3.fromRGB(58,65,80)
+	part.Material = material or Enum.Material.Metal
+	part.Anchored = true
+	part.CanCollide = collide ~= false
+	part.CanTouch = false
+	part.CanQuery = part.CanCollide
+	part:SetAttribute("TowerSolid",part.CanCollide)
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	part.Parent = parent
+	return part
+end
+function Util.label(part, text, color)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "Sign"
+	gui.Size = UDim2.fromOffset(240,60)
+	gui.StudsOffset = Vector3.new(0,4,0)
+	gui.MaxDistance = 95
+	gui.AlwaysOnTop = false
+	gui.Parent = part
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1,1)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = color or Color3.new(1,1,1)
+	label.TextStrokeTransparency = 0.3
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.Parent = gui
+end
+function Util.folder(parent,name)
+	local folder = Instance.new("Folder")
+	folder.Name = name
+	folder.Parent = parent
+	return folder
+end
+return Util
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="22">
+        <Properties>
+          <string name="Name">CheckpointService</string>
+          <string name="Source"><![CDATA[--!strict
+local RunService=game:GetService("RunService")
+local Shared=game:GetService("ReplicatedStorage").Shared
+local Rules=require(Shared.ProgressRules)
+local Recovery=require(script.Parent.RecoveryService)
+local Economy=require(script.Parent.EconomyService)
+local Service={}
+function Service.publish(player,p)
+	Recovery.update(player,p)
+	player:SetAttribute("RunStage",p.RunStage)
+	player:SetAttribute("MaxStage",p.MaxStage)
+	player:SetAttribute("Deaths",p.Deaths)
+	player:SetAttribute("StartedAt",p.StartedAt)
+	player:SetAttribute("FinishTime",p.FinishTime)
+	player:SetAttribute("Won",p.Won)
+	player:SetAttribute("Completed",p.Completed)
+	player:SetAttribute("BestTime",p.BestTime)
+	player:SetAttribute("FullRun",p.FullRun)
+	player:SetAttribute("SavePending",p.Revision>p.SavedRevision)
+end
+local function inside(part,position,halfSize)
+	local p=part.CFrame:PointToObjectSpace(position)
+	return math.abs(p.X)<=halfSize.X and math.abs(p.Y)<=halfSize.Y and math.abs(p.Z)<=halfSize.Z
+end
+function Service.start(tower,data,remotes)
+	local checkpoints={}
+	local gates={}
+	for n=1,50 do
+		checkpoints[n]=tower.Checkpoints:FindFirstChild("Checkpoint_"..n)
+		gates[n]={tower.RouteGates:FindFirstChild("Gate_"..n.."_4"),tower.RouteGates:FindFirstChild("Gate_"..n.."_8")}
+	end
+	local elapsed=0
+	local connection
+	connection=RunService.Heartbeat:Connect(function(dt)
+		if not tower.Parent then connection:Disconnect(); return end
+		elapsed+=dt
+		if elapsed<0.1 then return end
+		elapsed=0
+		for player,p in data.Profiles do
+			if not player.Parent or p.Won or p.Spawning then continue end
+			local character=player.Character
+			local root=character and character:FindFirstChild("HumanoidRootPart")
+			local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+			if not root or not humanoid or humanoid.Health<=0 then continue end
+			local stage=p.RunStage+1
+			local gate=gates[stage][p.Gate+1]
+			if gate and inside(gate,root.Position,Vector3.new(4.5,3.5,3.5)) then p.Gate+=1 end
+			local checkpoint=checkpoints[stage]
+			local relative=checkpoint.CFrame:PointToObjectSpace(root.Position)
+			local touching=Rules.onPad(relative.X,relative.Y,relative.Z,checkpoint.Size.X,checkpoint.Size.Z)
+			if touching and Rules.canCheckpoint(p,stage) then
+				Rules.advance(p,stage,os.clock())
+				player.RespawnLocation=checkpoint
+				if p.Won then
+					p.FinishTime=workspace:GetServerTimeNow()-p.StartedAt
+					if p.FullRun then p.BestTime=math.min(p.BestTime or math.huge,p.FinishTime) end
+				end
+				data.mark(p)
+				Service.publish(player,p)
+				remotes.CheckpointNotification:FireClient(player,stage)
+				local victoryCF=if p.Won then root.CFrame else nil
+				task.spawn(function()
+					Economy.stage(player,stage)
+					if victoryCF then Economy.victory(player,victoryCF) end
+				end)
+				if p.Won then
+					remotes.VictoryEvent:FireClient(player,p.FinishTime,p.FullRun)
+					task.spawn(data.save,player)
+				else data.requestSave(player) end
+			end
+		end
+	end)
+	return connection
+end
+return Service
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="23">
+        <Properties>
+          <string name="Name">CoinService</string>
+          <string name="Source"><![CDATA[--!strict
+local RunService=game:GetService("RunService")
+local Route=require(game:GetService("ReplicatedStorage").Shared.Route)
+local Definitions=require(game:GetService("ReplicatedStorage").Shared.StageDefinitions)
+local U=require(script.Parent.BuildUtil)
+local Service={}
+function Service.start(tower,economy,progress)
+	local folder=U.folder(tower,"CollectibleCoins")
+	local coins={}
+	for _,stage in Definitions do
+		for _,node in {4,8} do
+			local x,y,z=Route.point(stage.Id,node,stage.Layout)
+			local id=stage.Id.."_"..node
+			local coin=U.part(folder,"Coin_"..id,Vector3.new(0.22,1.4,1.4),
+				CFrame.new(x,y+2,z)*CFrame.Angles(0,math.pi/2,0),Color3.fromRGB(255,210,60),Enum.Material.Neon,false)
+			coin.Shape=Enum.PartType.Cylinder
+			coin:SetAttribute("CoinId",id)
+			coin:SetAttribute("Base",coin.CFrame)
+			coin:SetAttribute("Stage",stage.Id)
+			table.insert(coins,coin)
+		end
+	end
+	local elapsed=0
+	local connection
+	connection=RunService.Heartbeat:Connect(function(dt)
+		if not tower.Parent then connection:Disconnect(); return end
+		elapsed+=dt
+		if elapsed<0.2 then return end
+		elapsed=0
+		local day=math.floor(os.time()/86400)
+		if tower:GetAttribute("CoinDay")~=day then tower:SetAttribute("CoinDay",day) end
+		for player,p in economy.Profiles do
+			local run=progress.Profiles[player]
+			local character=player.Character
+			local root=character and character:FindFirstChild("HumanoidRootPart")
+			local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+			if not run or not root or not humanoid or humanoid.Health<=0 or p.Busy or p.Collecting then continue end
+			for _,coin in coins do
+				local id=coin:GetAttribute("CoinId")
+				if coin:GetAttribute("Stage")>run.RunStage+1 then continue end
+				if p.Wallet.Day==day and p.Wallet.Collected[id] then continue end
+				if (root.Position-coin.Position).Magnitude<=3 then
+					p.Collecting=true
+					task.spawn(function()
+						economy.change(player,{Kind="collect",Id=id,Day=day})
+						p.Collecting=false
+					end)
+					break
+				end
+			end
+		end
+	end)
+	return connection
+end
+return Service
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="24">
+        <Properties>
+          <string name="Name">CommerceConfig</string>
+          <string name="Source"><![CDATA[--!strict
+-- Create Developer Products in this experience, then replace ONLY ProductId.
+-- Zero intentionally disables a product; it is never used as a purchase target.
+-- Robux prices come from Roblox; do not hardcode them in the UI.
+return table.freeze({
+	DataStoreName="MechanicalTower_Economy_v1",
+	Products={
+		{Key="coins_small",Name="250 монет",Coins=250,ProductId=0},
+		{Key="coins_medium",Name="1000 монет",Coins=1000,ProductId=0},
+		{Key="coins_large",Name="3000 монет",Coins=3000,ProductId=0},
+	},
+})
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="25">
+        <Properties>
+          <string name="Name">CosmeticService</string>
+          <string name="Source"><![CDATA[--!strict
+local Catalog=require(game:GetService("ReplicatedStorage").Shared.CosmeticCatalog)
+local Cosmetic={}
+local function color(rgb) return Color3.fromRGB(rgb[1],rgb[2],rgb[3]) end
+local function marked(class,parent,name)
+	local object=Instance.new(class)
+	object.Name=name
+	object:SetAttribute("TowerCosmetic",true)
+	object.Parent=parent
+	return object
+end
+function Cosmetic.apply(player,wallet)
+	local character=player.Character
+	local root=character and character:FindFirstChild("HumanoidRootPart")
+	local head=character and character:FindFirstChild("Head")
+	if not root or not head then return end
+	for _,parent in {root,head} do
+		for _,object in parent:GetChildren() do
+			if object:GetAttribute("TowerCosmetic") then object:Destroy() end
+		end
+	end
+	local trailId=wallet.Equipped.Trail
+	if trailId~="trail_none" then
+		local item=Catalog.ById[trailId]
+		local a=marked("Attachment",root,"TowerTrailTop")
+		a.Position=Vector3.new(0,0.4,0.65)
+		local b=marked("Attachment",root,"TowerTrailBottom")
+		b.Position=Vector3.new(0,-1,0.65)
+		local trail=marked("Trail",root,"TowerTrail")
+		trail.Attachment0=a; trail.Attachment1=b
+		trail.Color=ColorSequence.new(color(item.Color),color(item.SecondColor or item.Color))
+		trail.Transparency=NumberSequence.new(0.2,1)
+		trail.Lifetime=0.45
+		trail.MinLength=0.15
+		trail.LightEmission=0.8
+		trail.FaceCamera=true
+	end
+	local item=Catalog.ById[wallet.Equipped.Title]
+	local gui=marked("BillboardGui",head,"TowerTitle")
+	gui.Size=UDim2.fromOffset(180,25)
+	gui.StudsOffset=Vector3.new(0,2.5,0)
+	gui.MaxDistance=45
+	local label=Instance.new("TextLabel")
+	label.BackgroundTransparency=1
+	label.Size=UDim2.fromScale(1,1)
+	label.Text=item.Name
+	label.TextColor3=color(item.Color)
+	label.TextStrokeTransparency=0.35
+	label.Font=Enum.Font.GothamBold
+	label.TextSize=14
+	label.Parent=gui
+end
+return Cosmetic
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="26">
+        <Properties>
+          <string name="Name">EconomyService</string>
+          <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local DataStoreService=game:GetService("DataStoreService")
+local MarketplaceService=game:GetService("MarketplaceService")
+local Shared=game:GetService("ReplicatedStorage").Shared
+local Config=require(Shared.GameConfig)
+local Catalog=require(Shared.CosmeticCatalog)
+local Rules=require(Shared.EconomyRules)
+local Receipts=require(Shared.ReceiptProcessor)
+local Commerce=require(script.Parent.CommerceConfig)
+local Cosmetics=require(script.Parent.CosmeticService)
+local persistent=not RunService:IsStudio() or Config.StudioPersistence
+local store=if persistent then DataStoreService:GetDataStore(Commerce.DataStoreName) else nil
+local Economy={Profiles={},Products={},Remotes=nil}
+local byProduct={}
+for _,product in Commerce.Products do
+	assert(product.ProductId>=0 and product.ProductId%1==0 and product.Coins>0 and product.Coins%1==0 and product.Coins<=Rules.MaxPack)
+	if product.ProductId>0 then
+		assert(not byProduct[product.ProductId],"Developer Product IDs must be unique")
+		byProduct[product.ProductId]=product
+	end
+end
+local function retry(operation)
+	local message
+	for attempt=1,3 do
+		local ok,result=pcall(operation)
+		if ok then return true,result end
+		message=result
+		if attempt<3 then task.wait(attempt) end
+	end
+	return false,message
+end
+function Economy.public(player)
+	local p=Economy.Profiles[player]
+	if not p then return {Ready=false} end
+	local w=p.Wallet
+	-- Never replicate receipt history to clients.
+	return {Ready=true,Revision=w.Revision,Coins=w.Coins,Owned=w.Owned,Equipped=w.Equipped,Day=w.Day,Collected=w.Collected,
+		Supporter=w.Supporter,WinRewarded=w.WinRewarded,Products=Economy.Products,Persistent=persistent}
+end
+function Economy.publish(player)
+	local p=Economy.Profiles[player]
+	if not p or not player.Parent then return end
+	player:SetAttribute("Coins",p.Wallet.Coins)
+	player:SetAttribute("CosmeticTrail",p.Wallet.Equipped.Trail)
+	player:SetAttribute("CosmeticVictory",p.Wallet.Equipped.Victory)
+	player:SetAttribute("CosmeticTitle",p.Wallet.Equipped.Title)
+	Economy.Remotes.ShopStateChanged:FireClient(player,Economy.public(player))
+	local signature=p.Wallet.Equipped.Trail..p.Wallet.Equipped.Title
+	if signature~=p.Appearance then Cosmetics.apply(player,p.Wallet); p.Appearance=signature end
+end
+function Economy.load(player)
+	local saved=nil
+	if store then
+		local ok,value=retry(function() return store:GetAsync("u_"..player.UserId) end)
+		if not ok then
+			warn("[Economy] Load failed: "..tostring(value))
+			if player.Parent then player:Kick("Could not load coins and inventory. Please rejoin; no data was overwritten.") end
+			return false
+		end
+		saved=value
+	end
+	if not player.Parent then return false end
+	Economy.Profiles[player]={Wallet=Rules.sanitize(saved,Catalog),Busy=false,LastRequest=-10}
+	Economy.publish(player)
+	return true
+end
+function Economy.change(player,command)
+	local p=Economy.Profiles[player]
+	if not p then return false,"not_loaded" end
+	local deadline=os.clock()+12
+	while p.Busy do
+		if os.clock()>deadline or not player.Parent then return false,"busy" end
+		task.wait(0.05)
+	end
+	if Economy.Profiles[player]~=p then return false,"not_loaded" end
+	p.Busy=true
+	local status="invalid"
+	local ok,state
+	if store then
+		ok,state=retry(function()
+			return store:UpdateAsync("u_"..player.UserId,function(old)
+				local nextState,result=Rules.apply(old,command,Catalog)
+				status=result
+				return nextState
+			end)
+		end)
+	else
+		ok,state=pcall(function()
+			local nextState,result=Rules.apply(p.Wallet,command,Catalog)
+			status=result
+			return nextState
+		end)
+	end
+	p.Busy=false
+	if not ok then warn("[Economy] Transaction pending: "..tostring(state)); return false,"save_failed" end
+	p.Wallet=state
+	Economy.publish(player)
+	return true,status
+end
+function Economy.stage(player,stage)
+	return Economy.change(player,{Kind="stage",Stage=stage})
+end
+function Economy.victory(player,cf)
+	Economy.change(player,{Kind="win"})
+	local p=Economy.Profiles[player]
+	if p and player.Parent then Economy.Remotes.CosmeticVictory:FireAllClients(player.UserId,cf,p.Wallet.Equipped.Victory) end
+end
+function Economy.character(player,character)
+	local p=Economy.Profiles[player]
+	if not p then return end
+	if character:WaitForChild("Head",15) and character:WaitForChild("HumanoidRootPart",15) and player.Character==character then
+		Cosmetics.apply(player,p.Wallet)
+	end
+end
+function Economy.remove(player)
+	-- All balance/inventory changes are already durable UpdateAsync transactions.
+	Economy.Profiles[player]=nil
+end
+local notices={not_enough_coins="Недостаточно монет",requires_win="Сначала покорите 50-й этап",requires_support="Титул выдаётся за поддержку проекта",not_owned="Сначала купите предмет",save_failed="Не удалось сохранить. Попробуйте ещё раз",busy="Покупка обрабатывается"}
+function Economy.start(remotes)
+	Economy.Remotes=remotes
+	local context={Products=byProduct,Durable=store~=nil,
+		GetPlayer=function(id) return Players:GetPlayerByUserId(id) end,
+		IsLoaded=function(player) return Economy.Profiles[player]~=nil end,
+		Grant=Economy.change}
+	MarketplaceService.ProcessReceipt=function(receipt)
+		local decision,status=Receipts.process(receipt,context)
+		if decision=="PurchaseGranted" and status=="ok" then
+			local player=Players:GetPlayerByUserId(receipt.PlayerId)
+			if player then remotes.ShopNotice:FireClient(player,"Покупка подтверждена · "..byProduct[receipt.ProductId].Coins.." монет") end
+		end
+		return Enum.ProductPurchaseDecision[decision]
+	end
+	remotes.ShopGetState.OnServerInvoke=function(player) return Economy.public(player) end
+	remotes.ShopRequest.OnServerEvent:Connect(function(player,action,id)
+		local p=Economy.Profiles[player]
+		if not p or type(action)~="string" or type(id)~="string" or #id>64 or os.clock()-p.LastRequest<0.6 then return end
+		p.LastRequest=os.clock()
+		if action=="donate" then
+			for _,product in Economy.Products do
+				if product.Key==id and product.Enabled then
+					local ok=pcall(function() MarketplaceService:PromptProductPurchase(player,product.ProductId) end)
+					if not ok then remotes.ShopNotice:FireClient(player,"Покупка сейчас недоступна") end
+					return
+				end
+			end
+			remotes.ShopNotice:FireClient(player,"Покупка пока недоступна")
+		elseif action=="buy" or action=="equip" then
+			if not Catalog.ById[id] then return end
+			local ok,result=Economy.change(player,{Kind=action,Id=id})
+			remotes.ShopNotice:FireClient(player,if ok and result=="ok" then "Предмет выбран" else notices[result] or "Операция недоступна")
+		end
+	end)
+	-- Zero IDs stay visible but disabled. No invented prices or fake successful sales.
+	for _,product in Commerce.Products do
+		table.insert(Economy.Products,{Key=product.Key,Name=product.Name,Coins=product.Coins,ProductId=product.ProductId,Enabled=false})
+	end
+	task.spawn(function()
+		for _,product in Economy.Products do
+			if product.ProductId>0 and not RunService:IsStudio() and game.GameId>0 then
+				local ok,info=pcall(function() return MarketplaceService:GetProductInfoAsync(product.ProductId,Enum.InfoType.Product) end)
+				if ok and type(info)=="table" and type(info.PriceInRobux)=="number" and info.IsForSale~=false then
+					product.Price=info.PriceInRobux
+					product.Enabled=true
+				else warn("[Commerce] Product metadata unavailable: "..product.ProductId) end
+			end
+		end
+		for player in Economy.Profiles do Economy.publish(player) end
+	end)
+end
+return Economy
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="27">
+        <Properties>
+          <string name="Name">GameBootstrap</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+Players.CharacterAutoLoads=false
+workspace:SetAttribute("TowerVersion","5.0")
+workspace:SetAttribute("TowerBootStatus","starting")
+workspace:SetAttribute("TowerBootError",nil)
+workspace:SetAttribute("TowerDiagnosticsPassed",nil)
+local function start()
+	local ReplicatedStorage=game:GetService("ReplicatedStorage")
+	workspace:SetAttribute("TowerBootStatus","modules")
+	local Generator=require(script.Parent.TowerGenerator)
+	local Traps=require(script.Parent.TrapController)
+	local Data=require(script.Parent.PlayerDataService)
+	local Economy=require(script.Parent.EconomyService)
+	local Coins=require(script.Parent.CoinService)
+	local Checkpoints=require(script.Parent.CheckpointService)
+	local Respawn=require(script.Parent.RespawnService)
+	local Rules=require(ReplicatedStorage.Shared.ProgressRules)
+	local remotes=Instance.new("Folder")
+	remotes.Name="Remotes"
+	for _,name in {"CheckpointNotification","VictoryEvent","PlayAgain","ShopRequest","ShopStateChanged","ShopNotice","CosmeticVictory"} do
+		local event=Instance.new("RemoteEvent")
+		event.Name=name
+		event.Parent=remotes
+	end
+	local shopState=Instance.new("RemoteFunction")
+	shopState.Name="ShopGetState"
+	shopState.Parent=remotes
+	remotes.Parent=ReplicatedStorage
+	workspace:SetAttribute("TowerBootStatus","generating")
+	local tower=Generator.generate()
+	workspace:SetAttribute("TowerBootStatus","services")
+	Economy.start(remotes)
+	Coins.start(tower,Economy,Data)
+	Traps.start(tower)
+	Checkpoints.start(tower,Data,remotes)
+	Data.start()
+	local connections={}
+	local joining={}
+	local function join(player)
+		if joining[player] then return end
+		joining[player]=true
+		local p=Data.load(player)
+		if not p then joining[player]=nil; return end
+		if not Economy.load(player) then joining[player]=nil; return end
+		task.spawn(function()
+			Economy.stage(player,p.MaxStage)
+			if p.Completed then Economy.change(player,{Kind="win"}) end
+		end)
+		Checkpoints.publish(player,p)
+		connections[player]=Respawn.bind(player,p,tower,Checkpoints.publish)
+		player:SetAttribute("DataLoaded",true)
+		Respawn.spawn(player,p,tower)
+	end
+	Players.PlayerAdded:Connect(join)
+	Players.PlayerRemoving:Connect(function(player)
+		local profile=Data.Profiles[player]
+		if profile and profile.CollisionConnection then profile.CollisionConnection:Disconnect() end
+		if connections[player] then connections[player]:Disconnect(); connections[player]=nil end
+		Data.save(player,os.clock()+15)
+		Data.Profiles[player]=nil
+		Economy.remove(player)
+		joining[player]=nil
+	end)
+	for _,player in Players:GetPlayers() do task.spawn(join,player) end
+	remotes.PlayAgain.OnServerEvent:Connect(function(player)
+		local p=Data.Profiles[player]
+		if not p or p.Spawning or not Rules.replay(p,workspace:GetServerTimeNow(),os.clock()) then return end
+		Checkpoints.publish(player,p)
+		player.RespawnLocation=tower.Foundation.LobbySpawn
+		local character=player.Character
+		local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+		if character and humanoid and humanoid.Health>0 then
+			local root=character:FindFirstChild("HumanoidRootPart")
+			if root then root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero end
+			character:PivotTo(Respawn.destination(tower,0))
+		else Respawn.spawn(player,p,tower) end
+	end)
+	print("[Tower] Server initialized. Characters spawn only after deterministic generation and data loading.")
+
+	workspace:SetAttribute("TowerBootStatus","ready")
+	-- Diagnostics still execute and report failure, but a diagnostic assertion must
+	-- not strand all players with CharacterAutoLoads=false before join is bound.
+	if game:GetService("RunService"):IsStudio() then
+		task.defer(function()
+			local ok,result=xpcall(function()
+				return require(game:GetService("ServerStorage").TowerTests.Smoke).run(tower)
+			end,debug.traceback)
+			workspace:SetAttribute("TowerDiagnosticsPassed",ok and result==true)
+			if not ok then
+				warn("[StudioSmoke] FAILED (game started; see diagnostic traceback): "..tostring(result))
+			end
+		end)
+	end
+end
+local ok,err=xpcall(start,debug.traceback)
+if not ok then
+	local phase=workspace:GetAttribute("TowerBootStatus")
+	workspace:SetAttribute("TowerBootError",tostring(err))
+	workspace:SetAttribute("TowerBootStatus","failed")
+	warn("[Tower] STARTUP FAILED at "..tostring(phase)..": "..tostring(err))
+end
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="28">
+        <Properties>
+          <string name="Name">PlayerDataService</string>
+          <string name="Source"><![CDATA[--!strict
+local DataStoreService=game:GetService("DataStoreService")
+local RunService=game:GetService("RunService")
+local Config=require(game:GetService("ReplicatedStorage").Shared.GameConfig)
+local Schema=require(game:GetService("ReplicatedStorage").Shared.DataSchema)
+local Data={Profiles={}, Closing=false}
+local persistent=not RunService:IsStudio() or Config.StudioPersistence
+local store=if persistent then DataStoreService:GetDataStore(Config.DataStoreName) else nil
+local function retry(operation, deadline)
+	local lastError
+	for attempt=1,4 do
+		if deadline and os.clock()>deadline then break end
+		local ok,result=pcall(operation)
+		if ok then return true,result end
+		lastError=result
+		if attempt<4 then task.wait(math.min(2^(attempt-1),4)) end
+	end
+	return false,lastError
+end
+function Data.load(player)
+	local saved={MaxStage=0,Completed=false}
+	if store then
+		local ok,value=retry(function() return store:GetAsync("u_"..player.UserId) end)
+		if not ok then
+			warn("[Data] Load failed for "..player.UserId..": "..tostring(value))
+			if player.Parent then player:Kick("Progress could not be loaded. Please rejoin; your saved progress is safe.") end
+			return nil -- Never overwrite existing data with defaults after a failed load.
+		end
+		saved=Schema.sanitize(value)
+	end
+	if not player.Parent then return nil end
+	local profile={MaxStage=saved.MaxStage,Completed=saved.Completed,BestTime=saved.BestTime,
+		RunStage=saved.MaxStage,Deaths=0,StartedAt=workspace:GetServerTimeNow(),
+		FullRun=saved.MaxStage==0,Won=saved.MaxStage==50,Revision=0,SavedRevision=0,
+		Saving=false,LastSave=0,Gate=0,StageEntered=os.clock(),LastReplay=0}
+	Data.Profiles[player]=profile
+	player:SetAttribute("Persistence",persistent)
+	return profile
+end
+function Data.mark(profile)
+	profile.Revision+=1
+end
+function Data.save(player,deadline)
+	local profile=Data.Profiles[player]
+	if not profile then return true end
+	while profile.Saving do
+		if deadline and os.clock()>deadline then return false end
+		task.wait(0.1)
+	end
+	if profile.SavedRevision>=profile.Revision then return true end
+	if not store then profile.SavedRevision=profile.Revision; return true end
+	profile.Saving=true
+	local revision=profile.Revision
+	local snapshot={MaxStage=profile.MaxStage,Completed=profile.Completed,BestTime=profile.BestTime}
+	local ok,result=retry(function()
+		return store:UpdateAsync("u_"..player.UserId,function(old)
+			return Schema.merge(old,snapshot)
+		end)
+	end,deadline)
+	profile.Saving=false
+	profile.LastSave=os.clock()
+	if ok then profile.SavedRevision=revision
+	else warn("[Data] Save pending for "..player.UserId..": "..tostring(result)) end
+	if player.Parent then player:SetAttribute("SavePending",profile.SavedRevision<profile.Revision) end
+	return ok
+end
+function Data.requestSave(player)
+	local profile=Data.Profiles[player]
+	if not profile or profile.Queued then return end
+	profile.Queued=true
+	task.delay(Config.SaveDebounce,function()
+		profile.Queued=false
+		if Data.Profiles[player] and not Data.Closing then Data.save(player) end
+	end)
+end
+function Data.start()
+	if not persistent then warn("[Data] Studio session-only mode. Set StudioPersistence=true on a separate published test place to test DataStore.") end
+	task.spawn(function()
+		while not Data.Closing do
+			task.wait(Config.SaveInterval)
+			for player in Data.Profiles do
+				if not Data.Closing then task.spawn(Data.save,player) end
+			end
+		end
+	end)
+	game:BindToClose(function()
+		Data.Closing=true
+		local deadline=os.clock()+25
+		local pending=0
+		for player in Data.Profiles do
+			pending+=1
+			task.spawn(function() Data.save(player,deadline); pending-=1 end)
+		end
+		while pending>0 and os.clock()<deadline do task.wait(0.1) end
+		if pending>0 then warn("[Data] Shutdown save deadline reached; "..pending.." writes unfinished") end
+	end)
+end
+return Data
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="29">
+        <Properties>
+          <string name="Name">RecoveryService</string>
+          <string name="Source"><![CDATA[--!strict
+local PhysicsService=game:GetService("PhysicsService")
+local Shared=game:GetService("ReplicatedStorage").Shared
+local Rules=require(Shared.RecoveryRules)
+local Route=require(Shared.Route)
+local Config=require(Shared.GameConfig)
+local Definitions=require(Shared.StageDefinitions)
+local U=require(script.Parent.BuildUtil)
+local Recovery={}
+function Recovery.configure()
+	for section=0,Rules.FloorCount do
+		local name=Rules.playerGroup(section)
+		if not PhysicsService:IsCollisionGroupRegistered(name) then PhysicsService:RegisterCollisionGroup(name) end
+	end
+	for floor=1,Rules.FloorCount do
+		local name=Rules.floorGroup(floor)
+		if not PhysicsService:IsCollisionGroupRegistered(name) then PhysicsService:RegisterCollisionGroup(name) end
+		PhysicsService:CollisionGroupSetCollidable(name,"Default",false)
+		for section=0,Rules.FloorCount do
+			PhysicsService:CollisionGroupSetCollidable(name,Rules.playerGroup(section),Rules.canStandOn(section,floor))
+		end
+	end
+end
+function Recovery.update(player,profile)
+	local section=Rules.section(profile.RunStage)
+	player:SetAttribute("RecoveryStage",section*Rules.Interval)
+	local character=player.Character
+	if not character or character:GetAttribute("TowerSection")==section then return end
+	character:SetAttribute("TowerSection",section)
+	for _,part in character:GetDescendants() do
+		if part:IsA("BasePart") then part.CollisionGroup=Rules.playerGroup(section) end
+	end
+end
+function Recovery.bindCharacter(player,profile,character)
+	if profile.CollisionConnection then profile.CollisionConnection:Disconnect() end
+	Recovery.update(player,profile)
+	profile.CollisionConnection=character.DescendantAdded:Connect(function(part)
+		if part:IsA("BasePart") then part.CollisionGroup=Rules.playerGroup(Rules.section(profile.RunStage)) end
+	end)
+end
+function Recovery.build(tower)
+	for floor=1,Rules.FloorCount do
+		local completed=floor*Rules.Interval
+		local height=Rules.floorHeight(floor)
+		local model=Instance.new("Model")
+		model.Name="Recovery_"..completed
+		model:SetAttribute("UnlockStage",completed)
+		model:SetAttribute("FloorHeight",height)
+		model.Parent=tower.RecoveryFloors
+		local accent=Config.ZoneColors[math.ceil(completed/10)]
+		local deck=U.part(model,"CatchDeck",Vector3.new(108,1.2,108),CFrame.new(0,height-0.6,0),Color3.fromRGB(104,116,132),Enum.Material.DiamondPlate)
+		for _,edge in {-53,53} do
+			U.part(model,"SafetyRail",Vector3.new(1,3,108),CFrame.new(edge,height+1.5,0),accent)
+			U.part(model,"SafetyRail",Vector3.new(106,3,1),CFrame.new(0,height+1.5,edge),accent)
+		end
+		-- Rejoin node 8 of the completed stage: only 3.33 studs above the floor.
+		-- Two broad steps approach it radially, without teleporting a fallen player.
+		local x,y,z=Route.point(completed,8,Definitions[completed].Layout)
+		local outward=Vector3.new(x,0,z).Unit
+		local endpoint=Vector3.new(x,y,z)
+		for step=1,2 do
+			local top=height+(y-height)*step/3
+			local position=endpoint+outward*((3-step)*4)
+			U.part(model,"ReturnStep_"..step,Vector3.new(5,1,5),CFrame.new(position.X,top-0.5,position.Z),accent)
+		end
+		local sign=U.part(model,"ReturnMarker",Vector3.new(1,0.15,1),CFrame.new(x,height+0.15,z)+outward*10,accent,Enum.Material.Neon,false)
+		U.label(sign,string.format("SAFETY FLOOR · %d–%d\n⇧ STAIRS → CHECKPOINT %d",completed+1,math.min(completed+5,50),completed),accent)
+		U.label(deck,string.format("RECOVERY %d\nFALLS STOP HERE AFTER CHECKPOINT %d",completed,completed),accent)
+		for _,part in model:GetDescendants() do
+			if part:IsA("BasePart") then part.CollisionGroup=Rules.floorGroup(floor) end
+		end
+	end
+end
+return Recovery
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="30">
+        <Properties>
+          <string name="Name">RespawnService</string>
+          <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local Config=require(game:GetService("ReplicatedStorage").Shared.GameConfig)
+local Recovery=require(script.Parent.RecoveryService)
+local Economy=require(script.Parent.EconomyService)
+local Respawn={}
+function Respawn.destination(tower,stage)
+	if stage==0 then return CFrame.new(42,12,0) end
+	return tower.Checkpoints:FindFirstChild("Checkpoint_"..stage):GetAttribute("Spawn")
+end
+function Respawn.spawn(player,profile,tower)
+	if profile.Spawning or not player.Parent then return end
+	profile.Spawning=true
+	player.RespawnLocation=if profile.RunStage==0 then tower.Foundation.LobbySpawn else tower.Checkpoints:FindFirstChild("Checkpoint_"..profile.RunStage)
+	local ok,err=pcall(function() player:LoadCharacterAsync() end)
+	profile.Spawning=false
+	if not ok and player.Parent then
+		warn("[Respawn] "..tostring(err))
+		task.delay(3,function() if player.Parent then Respawn.spawn(player,profile,tower) end end)
+	end
+end
+function Respawn.bind(player,profile,tower,publish)
+	local connection=player.CharacterAdded:Connect(function(character)
+		Recovery.bindCharacter(player,profile,character)
+		local humanoid=character:WaitForChild("Humanoid",15)
+		local root=character:WaitForChild("HumanoidRootPart",15)
+		if not humanoid or not root or not player.Parent then return end
+		humanoid.WalkSpeed=Config.WalkSpeed
+		humanoid.UseJumpPower=true
+		humanoid.JumpPower=Config.JumpPower
+		profile.Gate=0
+		profile.StageEntered=os.clock()
+		root.AssemblyLinearVelocity=Vector3.zero
+		root.AssemblyAngularVelocity=Vector3.zero
+		root.CFrame=Respawn.destination(tower,profile.RunStage)
+		humanoid.Died:Once(function()
+			profile.Deaths+=1
+			publish(player,profile)
+			task.delay(3,function()
+				if player.Parent and player.Character==character then Respawn.spawn(player,profile,tower) end
+			end)
+		end)
+		task.spawn(Economy.character,player,character)
+	end)
+	return connection
+end
+return Respawn
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="31">
+        <Properties>
+          <string name="Name">StageBuilder</string>
+          <string name="Source"><![CDATA[--!strict
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Config = require(Shared.GameConfig)
+local Route = require(Shared.Route)
+local U = require(script.Parent.BuildUtil)
+local Traps = require(script.Parent.TrapFactory)
+local Traversal=require(Shared.Traversal)
+local Walk=require(script.Parent.TraversalBuilder)
+local Builder = {}
+function Builder.build(tower, definition)
+	local id = definition.Id
+	local stage = Instance.new("Model")
+	stage.Name = string.format("Stage_%02d_%s",id,definition.Name)
+	stage:SetAttribute("StageId",id)
+	stage:SetAttribute("Traversal",definition.Traversal)
+	stage.Parent = tower.Stages
+	local accent = Config.ZoneColors[definition.Zone]
+	local frames = {}
+	for node=0,12 do
+		local x,y,z = Route.point(id,node,definition.Layout)
+		local nx,_,nz = Route.point(id,math.min(node+1,12),definition.Layout)
+		local point = Vector3.new(x,y,z)
+		local tangent = if node==12 then Vector3.new(-z,0,x).Unit else Vector3.new(nx-x,0,nz-z).Unit
+		frames[node] = CFrame.lookAt(point,point+tangent)
+	end
+	for node=0,12 do
+		if node==0 and id>1 then continue end -- Previous checkpoint is this stage's safe start.
+		local cf = frames[node]
+		local station = if node==2 then 1 elseif node==6 then 2 elseif node==10 then 3 else nil
+		local kind = if station then definition.Traps[station] else nil
+		local moving = kind=="move" or kind=="lift" or kind=="orbit" or kind=="gear" or kind=="fade" or kind=="timer" or kind=="conveyor"
+		local width,depth,shape=Traversal.node(definition,node,Route.width(id,node,definition.Layout),Route.depth(id,node))
+		if not moving then
+			local p
+			if shape=="post" then p=Walk.post(stage,"Post_"..node,cf,width,accent)
+			else p=U.part(stage,"Landing_"..node,Vector3.new(width,1,depth),cf*CFrame.new(0,-0.5,0)) end
+			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,depth-0.3),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
+			if node%4==0 then
+				-- Side rails leave both route ends open and never close the fall shafts.
+				for side=-1,1,2 do
+					U.part(stage,"RestRail",Vector3.new(0.25,2.5,2.3),cf*CFrame.new(side*(width/2+0.25),1.25,0),accent)
+				end
+			end
+			if node==0 then U.label(p,string.format("%02d · %s\n⇧ FOLLOW THE LIGHTS",id,definition.Name),accent) end
+		end
+		if definition.Layout=="maze" and (node==3 or node==5 or node==7 or node==9) then
+			local side=if node%4==1 then -1 else 1
+			U.part(stage,"MazeFin",Vector3.new(0.5,4,4),cf*CFrame.new(side*(width/2-0.4),2,0),accent)
+		end
+		if station then Traps.create(stage,kind,cf,definition,station) end
+		if node==4 or node==8 then
+			local gate = U.part(tower.RouteGates,"Gate_"..id.."_"..node,Vector3.new(9,7,7),cf*CFrame.new(0,3,0),accent,nil,false)
+			gate.Transparency=1
+			gate.CanQuery=false
+			gate:SetAttribute("Stage",id)
+			gate:SetAttribute("Order",node/4)
+		end
+		if node==12 then
+			local cp=Instance.new("SpawnLocation")
+			cp.Name="Checkpoint_"..id
+			cp.Size=Vector3.new(4.8,0.2,2.6)
+			cp.CFrame=cf*CFrame.new(0,0.12,0)
+			cp.Color=accent
+			cp.Material=Enum.Material.Neon
+			cp.Anchored=true
+			cp.CanCollide=false
+			cp.CanQuery=false
+			cp.CanTouch=true
+			cp.Neutral=true
+			cp.Enabled=true
+			cp.Duration=0
+			cp.AllowTeamChangeOnTouch=false
+			cp.Parent=tower.Checkpoints
+			cp:SetAttribute("Stage",id)
+			cp:SetAttribute("Spawn",cf*CFrame.new(0,4,0))
+			U.label(cp,string.format("CHECKPOINT %02d / 50\n%s",id,definition.Name),accent)
+		elseif node%4==1 then
+			local sign = U.part(stage,"Direction",Vector3.new(0.15,0.15,0.15),cf*CFrame.new(0,2.5,0),accent,nil,false)
+			sign.Transparency=1
+			U.label(sign,"WAIT FOR GREEN\n⇧ JUMP",accent)
+		end
+	end
+	Walk.build(stage,definition,accent)
+	-- A few industrial details per zone, all outside the jumping corridor.
+	local x,y,z=Route.point(id,6,definition.Layout)
+	U.part(stage,"ServicePipe",Vector3.new(0.6,13,0.6),CFrame.new(x*1.32,y+3,z*1.32),accent)
+	return stage
+end
+return Builder
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="32">
+        <Properties>
+          <string name="Name">TowerGenerator</string>
+          <string name="Source"><![CDATA[--!strict
+local Lighting = game:GetService("Lighting")
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Config = require(Shared.GameConfig)
+local Definitions = require(Shared.StageDefinitions)
+local Route = require(Shared.Route)
+local U = require(script.Parent.BuildUtil)
+local Builder = require(script.Parent.StageBuilder)
+local Recovery=require(script.Parent.RecoveryService)
+local Generator = {}
+function Generator.generate()
+	Recovery.configure()
+	Lighting.ClockTime=13.5
+	Lighting.Brightness=3.2
+	Lighting.Ambient=Color3.fromRGB(166,176,194)
+	Lighting.OutdoorAmbient=Color3.fromRGB(194,204,219)
+	Lighting.GlobalShadows=false
+	local existing=workspace:FindFirstChild("GeneratedTower")
+	if existing then
+		assert(existing:GetAttribute("Ready"),"Previous incomplete tower exists; stop Play before rebuilding")
+		return existing
+	end
+	Route.validate(Definitions)
+	local tower=Instance.new("Model")
+	tower.Name="GeneratedTower"
+	tower:SetAttribute("Ready",false)
+	-- Parent only when the complete map is ready; auto character loading is disabled by bootstrap.
+	for _,name in {"Foundation","StructuralSupports","Stages","Checkpoints","KillZones","FinishArea","RouteGates","RecoveryFloors"} do U.folder(tower,name) end
+	U.part(tower.Foundation,"Foundation",Vector3.new(108,4,108),CFrame.new(0,0,0),Color3.fromRGB(35,40,50),Enum.Material.Concrete)
+	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(42,5,0))
+	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(42,3,-15))
+	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(42,4,-11))
+	local spawn=Instance.new("SpawnLocation")
+	spawn.Name="LobbySpawn"
+	spawn.Size=Vector3.new(8,1,8)
+	spawn.CFrame=CFrame.new(42,8,0)
+	spawn.Anchored=true
+	spawn.Neutral=true
+	spawn.Duration=0
+	spawn.Transparency=1
+	spawn.CanCollide=false
+	spawn.Enabled=true -- Each player explicitly selects this or a completed checkpoint as RespawnLocation.
+	spawn.Parent=tower.Foundation
+	U.label(spawn,"MEGA MECHANICAL TOWER\n50 STAGES · SAFETY FLOORS EVERY 5",Config.ZoneColors[1])
+	for _,x in {-47,47} do for _,z in {-47,47} do
+		U.part(tower.StructuralSupports,"MainColumn",Vector3.new(3,1010,3),CFrame.new(x,503,z))
+		U.part(tower.StructuralSupports,"ColumnLight",Vector3.new(0.25,1008,0.25),CFrame.new(x-1.6,503,z-1.6),Config.ZoneColors[5],Enum.Material.Neon,false)
+	end end
+	for level=0,10 do
+		local y=level*100+4
+		for _,z in {-47,47} do U.part(tower.StructuralSupports,"CrossBeam",Vector3.new(97,1.5,2),CFrame.new(0,y,z)) end
+		for _,x in {-47,47} do U.part(tower.StructuralSupports,"CrossBeam",Vector3.new(2,1.5,97),CFrame.new(x,y,0)) end
+	end
+	local kill=U.part(tower.KillZones,"BottomKillZone",Vector3.new(4000,5,4000),CFrame.new(0,-65,0),nil,nil,false)
+	kill.Transparency=1
+	kill.CanTouch=true
+	kill.Touched:Connect(function(hit)
+		local character=hit:FindFirstAncestorOfClass("Model")
+		local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then humanoid.Health=0 end
+	end)
+	for _,definition in Definitions do Builder.build(tower,definition) end
+	Recovery.build(tower)
+	local finish=tower.Checkpoints:FindFirstChild("Checkpoint_50")
+	local finishCF=finish.CFrame*CFrame.new(0,-0.12,-11)
+	U.part(tower.FinishArea,"CrownDeck",Vector3.new(26,1,22),finishCF*CFrame.new(0,-0.5,0),Color3.fromRGB(26,30,42))
+	for _,x in {-12.5,12.5} do U.part(tower.FinishArea,"ViewingRail",Vector3.new(0.4,3,20),finishCF*CFrame.new(x,1.5,0),Config.ZoneColors[5]) end
+	local portal=U.part(tower.FinishArea,"VictoryPortal",Vector3.new(12,0.5,1),finishCF*CFrame.new(0,10,-6),Config.ZoneColors[5],Enum.Material.Neon,false)
+	for _,x in {-6,6} do U.part(tower.FinishArea,"PortalPillar",Vector3.new(0.5,10,1),finishCF*CFrame.new(x,5,-6),Config.ZoneColors[5],Enum.Material.Neon,false) end
+	U.label(portal,"YOU WIN!\nMASTER MECHANIC",Config.ZoneColors[5])
+	local attachment=Instance.new("Attachment")
+	attachment.Position=Vector3.new(0,-4,0)
+	attachment.Parent=portal
+	local confetti=Instance.new("ParticleEmitter")
+	confetti.Name="Confetti"
+	confetti.Enabled=false
+	confetti.Rate=0
+	confetti.Texture="rbxasset://textures/particles/sparkles_main.dds"
+	confetti.Color=ColorSequence.new(Config.ZoneColors[3],Config.ZoneColors[5])
+	confetti.Lifetime=NumberRange.new(2,4)
+	confetti.Speed=NumberRange.new(12,24)
+	confetti.SpreadAngle=Vector2.new(180,180)
+	confetti.Acceleration=Vector3.new(0,-18,0)
+	confetti.Parent=attachment
+	for _,item in {"Atmosphere","BloomEffect","ColorCorrectionEffect"} do
+		if not Lighting:FindFirstChild("Tower"..item) then
+			local effect=Instance.new(item)
+			effect.Name="Tower"..item
+			if item=="Atmosphere" then effect.Density=0.07; effect.Offset=0.15
+			elseif item=="BloomEffect" then effect.Intensity=0.35; effect.Size=24; effect.Threshold=1.4
+			else effect.Contrast=0.02; effect.Saturation=0.06 end
+			effect.Parent=Lighting
+		end
+	end
+	assert(#tower.Stages:GetChildren()==Config.StageCount)
+	assert(#tower.Checkpoints:GetChildren()==Config.StageCount)
+	assert(#tower.RouteGates:GetChildren()==Config.StageCount*2)
+	local lastY=-math.huge
+	for i=1,Config.StageCount do
+		local cp=tower.Checkpoints:FindFirstChild("Checkpoint_"..i)
+		assert(cp and cp.Position.Y>lastY,"Invalid checkpoint height")
+		lastY=cp.Position.Y
+	end
+	tower:SetAttribute("Ready",true)
+	tower.Parent=workspace
+	local parts=0
+	for _,object in tower:GetDescendants() do if object:IsA("BasePart") then parts+=1 end end
+	print(string.format("[Tower] READY: 50 stages, 50 checkpoints, 100 route gates, %d parts; top %.1f studs",parts,lastY))
+	return tower
+end
+return Generator
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="33">
+        <Properties>
+          <string name="Name">TrapController</string>
+          <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local CollectionService=game:GetService("CollectionService")
+local Motion=require(game:GetService("ReplicatedStorage").Shared.TrapMotion)
+local Controller={}
+function Controller.start(tower)
+	local mechanisms=CollectionService:GetTagged("TowerMechanism")
+	local records={}
+	for _,model in mechanisms do
+		if model:IsDescendantOf(tower) then
+			local hazards={}
+			for _,p in model:GetDescendants() do
+				if p:IsA("BasePart") and p:GetAttribute("Hazard") then table.insert(hazards,p) end
+			end
+			table.insert(records,{model=model,hazards=hazards})
+		end
+	end
+	local elapsed=0
+	local hitAt=setmetatable({},{__mode="k"})
+	local connection
+	connection=RunService.PreSimulation:Connect(function(dt)
+		if not tower.Parent then connection:Disconnect(); return end
+		elapsed+=dt
+		if elapsed<1/30 then return end
+		elapsed=0
+		local now=workspace:GetServerTimeNow()
+		local characters={}
+		local heights={}
+		local positions={}
+		for _,player in Players:GetPlayers() do
+			local character=player.Character
+			local root=character and character:FindFirstChild("HumanoidRootPart")
+			if root then table.insert(characters,character); table.insert(heights,root.Position.Y); table.insert(positions,root.Position) end
+		end
+		local params=OverlapParams.new()
+		params.FilterType=Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances=characters
+		for _,record in records do
+			local model=record.model
+			local near=false
+			for _,height in heights do
+				if math.abs(height-model:GetAttribute("Base").Position.Y)<130 then near=true; break end
+			end
+			if not near then continue end
+			local danger=Motion.apply(model,now)
+			for _,p in record.hazards do
+				-- Inactive laser beams must also disappear on clients; motion is evaluated there too.
+				if model:GetAttribute("Motion")=="gate" then
+					p.Transparency=if danger then 0.05 elseif model:GetAttribute("VisualState")=="warning" then 0.65 else 0.95
+				end
+			end
+			local damageNear=false
+			for _,position in positions do
+				if (position-model:GetAttribute("Base").Position).Magnitude<24 then damageNear=true; break end
+			end
+			if not danger or not damageNear then continue end
+			for _,hazard in record.hazards do
+				for _,hit in workspace:GetPartBoundsInBox(hazard.CFrame,hazard.Size,params) do
+					local character=hit:FindFirstAncestorOfClass("Model")
+					if character and hit.Parent~=character then continue end -- Cosmetic accessories do not enlarge the damage hitbox.
+					local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+					local root=character and character:FindFirstChild("HumanoidRootPart")
+					if not humanoid or humanoid.Health<=0 or now-(hitAt[humanoid] or 0)<0.6 then continue end
+					hitAt[humanoid]=now
+					local damage=model:GetAttribute("Damage")
+					if damage>0 then humanoid:TakeDamage(damage) end
+					if root and model:GetAttribute("Push")>0 then
+						root:ApplyImpulse((model:GetAttribute("Base").RightVector*model:GetAttribute("Push")+Vector3.new(0,9,0))*root.AssemblyMass)
+					end
+				end
+			end
+		end
+	end)
+	print("[Tower] Central trap controller: "..#records.." mechanisms; 30 Hz, vertical activity culling")
+	return connection
+end
+return Controller
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="34">
+        <Properties>
+          <string name="Name">TrapFactory</string>
+          <string name="Source"><![CDATA[--!strict
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Definitions = require(Shared.TrapDefinitions)
+local U = require(script.Parent.BuildUtil)
+local Difficulty=require(Shared.Difficulty)
+local Route=require(Shared.Route)
+local Geometry=require(Shared.TrapGeometry)
+local Factory = {}
+local metal = Color3.fromRGB(75,83,104)
+local danger = Color3.fromRGB(255,75,70)
+function Factory.create(parent, kind, surface, stage, station)
+	local definition=Difficulty.trap(assert(Definitions[kind],"Unknown trap "..kind),stage,station)
+	assert(definition.Size>0 and definition.Speed>0 and definition.Safe>0 and definition.Warning>0 and definition.Active>0)
+	local model = Instance.new("Model")
+	model.Name = kind .. "_" .. station
+	model:SetAttribute("Kind",kind)
+	model:SetAttribute("Stage",stage.Id)
+	for key,value in definition do model:SetAttribute(key,value) end
+	model:SetAttribute("Speed", definition.Speed)
+	-- Some rooms share a clock; others have clearly staggered warnings.
+	model:SetAttribute("Phase", if stage.Id == 30 or stage.Id == 47 then stage.Phase else stage.Phase + station * 1.35)
+	local direction=Vector3.new(definition.DirectionX,definition.DirectionY,definition.DirectionZ)
+	model:SetAttribute("Direction",if direction.Magnitude>0 then direction.Unit else Vector3.xAxis)
+	local base = surface
+	if kind == "press" then base *= CFrame.new(0,Geometry.PressRestHeight,0)
+	elseif kind == "pendulum" then base *= CFrame.new(0,12,0)
+	elseif kind == "pusher" then base *= CFrame.new(-6,2,0)
+	elseif kind == "ring" then base *= CFrame.new(0,3.5,0)
+	elseif kind == "door" then base *= CFrame.new(0,Geometry.DoorRestCenter,0)
+	elseif kind == "laser" then base *= CFrame.new(0,2,0)
+	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then base *= CFrame.new(0,Geometry.SweepHeight,0)
+	end
+	model:SetAttribute("Base",base)
+	model.WorldPivot = base
+	local function piece(name,size,localCF,hazard,carry,solid)
+		local p = U.part(model,name,size,base*localCF,if hazard then danger else metal,
+			if hazard then Enum.Material.Neon else Enum.Material.DiamondPlate,solid)
+		p:SetAttribute("Hazard",hazard == true)
+		p:SetAttribute("Carry",carry == true and definition.Carry)
+		p:SetAttribute("Signal",hazard == true or kind == "fade" or kind == "timer")
+		return p
+	end
+	if kind == "move" or kind == "lift" or kind == "orbit" or kind == "fade" or kind == "timer" or kind == "conveyor" then
+		local deckWidth,deckDepth=Route.carrierSize(stage.Id)
+		piece("Deck",Vector3.new(deckWidth,1,deckDepth),CFrame.new(0,-0.5,0),false,true,true)
+		for x=-1,1,2 do
+			piece("EdgeLight",Vector3.new(0.15,0.08,deckDepth-0.2),CFrame.new(x*(deckWidth/2-0.15),0.04,0),false,false,false).Color = Color3.fromRGB(70,220,255)
+		end
+		if kind == "lift" then
+			piece("MovingColumn",Vector3.new(2.8,6,2.8),CFrame.new(0,-4,0),false,false,false)
+		end
+		if kind == "conveyor" then
+			for z=-1,1 do
+				local stripe = piece("BeltMark",Vector3.new(deckWidth-0.4,0.04,0.16),CFrame.new(0,0.05,z),false,false,false)
+				stripe.Color = Color3.fromRGB(255,195,60)
+			end
+			U.label(model.Deck, "⇧ BELT ⇧",Color3.fromRGB(255,195,60))
+		end
+	elseif kind == "gear" then
+		local deck = piece("GearDeck",Vector3.new(0.9,Geometry.GearDiameter,Geometry.GearDiameter),CFrame.new(0,-0.45,0)*CFrame.Angles(0,0,math.pi/2),false,true,true)
+		deck.Shape = Enum.PartType.Cylinder
+		for n=0,11 do
+			local a=n*math.pi/6
+			piece("Tooth",Vector3.new(0.7,0.65,0.9),CFrame.new(math.cos(a)*Geometry.GearToothRadius,-0.3,math.sin(a)*Geometry.GearToothRadius)*CFrame.Angles(0,-a,0),true,false,false)
+		end
+		piece("Sector",Vector3.new(1.5,0.08,4),CFrame.new(0,0.06,0),false,false,false).Color=Color3.fromRGB(60,230,170)
+	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then
+		piece("Axle",Vector3.new(0.6,2,0.6),CFrame.new(0,-1,0),false,false,false)
+		if kind=="blade" then
+			-- Three short paddles; no lethal upper bar or reach into the waiting pad.
+			for index=0,2 do
+				local angle=index*math.pi*2/3
+				local offset=CFrame.new(math.cos(angle)*Geometry.BladeCenter,0,math.sin(angle)*Geometry.BladeCenter)*CFrame.Angles(0,-angle,0)
+				piece(if index==0 then "Sweep" elseif index==1 then "CrossSweep" else "ThirdSweep",
+					Vector3.new(Geometry.BladeLength,Geometry.SweepThickness,0.75),offset,true,false,false)
+			end
+		else
+			piece("Sweep",Vector3.new(Geometry.SweepLength,Geometry.SweepThickness,0.45),CFrame.new(),true,false,false)
+			if kind=="doubleRotor" then
+				piece("CrossSweep",Vector3.new(0.45,Geometry.SweepThickness,Geometry.SweepLength),CFrame.new(),true,false,false)
+			end
+		end
+	elseif kind == "pendulum" then
+		piece("Shaft",Vector3.new(0.35,9,0.35),CFrame.new(0,-4.5,0),false,false,false)
+		piece("Hammer",Vector3.new(if stage.Id>=34 then 4.2 else 3.5,2.2,2.5),CFrame.new(0,-9.5,0),true,false,false)
+	elseif kind == "press" then
+		piece("Piston",Vector3.new(1,5,1),CFrame.new(0,3,0),false,false,false)
+		piece("Crusher",Vector3.new(7,1.5,4),CFrame.new(),true,false,true)
+	elseif kind == "pusher" then
+		piece("Ram",Vector3.new(1.2,3,3),CFrame.new(),true,false,true)
+	elseif kind == "laser" then
+		piece("Beam",Vector3.new(10,0.35,0.35),CFrame.new(),true,false,false)
+	elseif kind == "ring" then
+		for n=0,9 do
+			local a=n*math.pi/6
+			piece("Rim",Vector3.new(1.9,0.5,0.5),CFrame.new(math.cos(a)*3.7,math.sin(a)*3.7,0)*CFrame.Angles(0,0,a+math.pi/2),true,false,false)
+		end
+		piece("Spoke",Vector3.new(3.5,0.4,0.4),CFrame.new(1.75,0,0),true,false,false)
+	elseif kind == "door" then
+		piece("Shutter",Vector3.new(9,6,0.7),CFrame.new(),false,false,true)
+	end
+	local signal=piece("WarningStrip",Vector3.new(2,0.12,0.2),CFrame.new(0,0.15,2.8),false,false,false)
+	signal.Material=Enum.Material.Neon
+	signal:SetAttribute("Signal",true)
+	if stage.Id%5==0 then
+		local attachment=Instance.new("Attachment")
+		attachment.Parent=signal
+		local sparks=Instance.new("ParticleEmitter")
+		sparks.Name="WarningSparks"
+		sparks.Enabled=false
+		sparks.Rate=0
+		sparks.Texture="rbxasset://textures/particles/sparkles_main.dds"
+		sparks.Color=ColorSequence.new(Color3.fromRGB(255,190,60))
+		sparks.Lifetime=NumberRange.new(0.15,0.4)
+		sparks.Speed=NumberRange.new(2,5)
+		sparks.Parent=attachment
+	end
+	if definition.Size~=1 then model:ScaleTo(definition.Size) end
+	model.Parent = parent
+	model:AddTag("TowerMechanism")
+	return model
+end
+return Factory
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="35">
+        <Properties>
+          <string name="Name">TraversalBuilder</string>
+          <string name="Source"><![CDATA[--!strict
+local Shared=game:GetService("ReplicatedStorage").Shared
+local Traversal=require(Shared.Traversal)
+local Route=require(Shared.Route)
+local U=require(script.Parent.BuildUtil)
+local Builder={}
+local labels={rails="BALANCE BEAMS",needles="NEEDLE WALK",zigzag="ZIGZAG CATWALK",pipes="PIPE CROSSING",wrap="AROUND THE COLUMNS",posts="COLUMN HOPS"}
+local function vector(p) return Vector3.new(p.x,p.y,p.z) end
+function Builder.post(parent,name,cf,diameter,accent)
+	local height=4
+	local part=U.part(parent,name,Vector3.new(height,diameter,diameter),
+		CFrame.new(cf.Position-Vector3.new(0,height/2,0))*CFrame.Angles(0,0,math.pi/2),accent,Enum.Material.Concrete)
+	part.Shape=Enum.PartType.Cylinder
+	part:SetAttribute("TraversalPost",true)
+	return part
+end
+function Builder.build(parent,definition,accent)
+	local style=definition.Traversal or "jumps"
+	if style=="jumps" then return end
+	local model=Instance.new("Model")
+	model.Name="Traversal_"..style
+	model:SetAttribute("Style",style)
+	model.Parent=parent
+	for index,path in Traversal.paths(definition,Route) do
+		for segment=1,#path.Points-1 do
+			local a,b=vector(path.Points[segment]),vector(path.Points[segment+1])
+			local direction=(b-a).Unit
+			local up=(Vector3.yAxis-direction*direction.Y).Unit
+			local center=(a+b)/2
+			local part
+			if path.Shape=="pipe" then
+				part=U.part(model,"Pipe_"..index.."_"..segment,
+					Vector3.new((b-a).Magnitude+0.5,path.Width,path.Width),
+					CFrame.fromMatrix(center-Vector3.yAxis*path.Width/2,direction,up,direction:Cross(up)),
+					Color3.fromRGB(155,169,185))
+				part.Shape=Enum.PartType.Cylinder
+			else
+				part=U.part(model,"Beam_"..index.."_"..segment,
+					Vector3.new(path.Width,0.45,(b-a).Magnitude+0.5),
+					CFrame.lookAt(center-Vector3.yAxis*0.225,b-Vector3.yAxis*0.225),Color3.fromRGB(155,169,185),Enum.Material.DiamondPlate)
+			end
+			part:SetAttribute("WalkWidth",path.Width)
+			part:SetAttribute("TraversalSurface",true)
+			-- A slim center light makes the route legible without widening collision.
+			U.part(model,"CenterStripe",Vector3.new(0.08,0.04,(b-a).Magnitude),
+				CFrame.lookAt(center+up*0.035,b+up*0.035),accent,Enum.Material.Neon,false)
+		end
+		for point=2,#path.Points-1 do
+			local p=path.Points[point]
+			U.part(model,"CornerJoint",Vector3.new(path.Width,0.45,path.Width),CFrame.new(p.x,p.y-0.225,p.z),accent)
+		end
+		if path.Column then
+			local p=path.Column
+			U.part(model,"RouteColumn",Vector3.new(1.2,7,1.2),CFrame.new(p.x,p.y+3.5,p.z),Color3.fromRGB(95,108,129))
+		end
+	end
+	local x,y,z=Route.point(definition.Id,4,definition.Layout)
+	local sign=U.part(model,"TraversalSign",Vector3.new(0.1,0.1,0.1),CFrame.new(x,y+2,z),accent,nil,false)
+	sign.Transparency=1
+	U.label(sign,labels[style].."\n⇧ FOLLOW THE CENTER LIGHT",accent)
+end
+return Builder
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerStorage" referent="36">
+    <Properties>
+      <string name="Name">ServerStorage</string>
+    </Properties>
+    <Item class="Folder" referent="37">
+      <Properties>
+        <string name="Name">TowerTests</string>
+      </Properties>
+      <Item class="ModuleScript" referent="38">
+        <Properties>
+          <string name="Name">Smoke</string>
+          <string name="Source"><![CDATA[--!strict
+-- Runs automatically only in Studio after generation. No production mutations.
+local Test={}
+function Test.run(tower)
+	local Shared=game:GetService("ReplicatedStorage").Shared
+	local Definitions=require(Shared.StageDefinitions)
+	local Route=require(Shared.Route)
+	local Motion=require(Shared.TrapMotion)
+	local Recovery=require(Shared.RecoveryRules)
+	local Geometry=require(Shared.TrapGeometry)
+	local Numeric=require(Shared.Numeric)
+	local Traversal=require(Shared.Traversal)
+	local PhysicsService=game:GetService("PhysicsService")
+	assert(Route.validate(Definitions))
+	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
+	for floor=1,9 do
+		local model=tower.RecoveryFloors:FindFirstChild("Recovery_"..floor*5)
+		assert(model and model.CatchDeck.Size.X==108 and model.CatchDeck.Size.Z==108)
+		assert(math.abs(model.CatchDeck.Position.Y+model.CatchDeck.Size.Y/2-Recovery.floorHeight(floor))<0.01)
+		for section=0,9 do
+			assert(PhysicsService:CollisionGroupsAreCollidable(Recovery.floorGroup(floor),Recovery.playerGroup(section))==Recovery.canStandOn(section,floor),"Incorrect recovery collision matrix")
+		end
+	end
+	assert(game:GetService("Lighting").ClockTime==13.5,"Daylight settings missing")
+	assert(tower:GetAttribute("Ready"))
+	assert(#tower.Stages:GetChildren()==50)
+	assert(#tower.CollectibleCoins:GetChildren()==100,"Missing map coins")
+	local CoinRules=require(Shared.EconomyRules)
+	for _,coin in tower.CollectibleCoins:GetChildren() do
+		assert(CoinRules.validCoin(coin:GetAttribute("CoinId")),"Bad coin ID")
+		assert(coin.Anchored and not coin.CanCollide and not coin.CanTouch,"Coins affect physics")
+	end
+	local remotes=game:GetService("ReplicatedStorage").Remotes
+	assert(remotes.ShopGetState:IsA("RemoteFunction") and remotes.ShopRequest:IsA("RemoteEvent"),"Shop protocol missing")
+	assert(#tower.Checkpoints:GetChildren()==50)
+	assert(#tower.RouteGates:GetChildren()==100)
+	local count=0
+	for _,model in game:GetService("CollectionService"):GetTagged("TowerMechanism") do
+		if not model:IsDescendantOf(tower) then continue end
+		count+=1
+		local base=model:GetAttribute("Base")
+		assert(typeof(base)=="CFrame")
+		local safe=model:GetAttribute("Safe")
+		local warning=model:GetAttribute("Warning")
+		local active=model:GetAttribute("Active")
+		local speed=model:GetAttribute("Speed")
+		local phase=model:GetAttribute("Phase")
+		assert(speed>0 and warning/speed>=1.2-0.00001,"Warning window too short")
+		assert(safe/speed>=3.6-0.00001,"Safe window too short")
+		for _,sample in {0.1,safe+warning*0.5,safe+warning+active*0.5} do
+			local time=(sample-phase)/speed
+			local first,state,danger=Motion.evaluate(model,time)
+			assert(danger==(state=="active"),"Green or warning trap can damage player")
+			local second=Motion.evaluate(model,time)
+			assert(first==second,"Nondeterministic mechanism")
+			assert(first.Position.X==first.Position.X,"NaN mechanism transform")
+			if sample<safe then assert(state=="safe")
+			elseif sample<safe+warning then assert(state=="warning")
+			else assert(state=="active") end
+		end
+		if model:GetAttribute("Kind")=="blade" or model:GetAttribute("Kind")=="doubleRotor" then
+			assert(math.abs(model.CrossSweep.Position.Y-model.Sweep.Position.Y)<0.001,"Unfair double-height blade")
+			assert(Numeric.near(model.Sweep.Size.X,if model:GetAttribute("Kind")=="blade" then Geometry.BladeLength else Geometry.SweepLength),"Unsafe blade reach")
+		end
+		if model:GetAttribute("Stage")==15 then assert(safe/speed>=5.5-0.00001,"Stage 15 crossing window missing") end
+		for _,part in model:GetDescendants() do
+			if part:IsA("BasePart") then assert(part.Anchored,"Uncontrolled physics assembly") end
+		end
+	end
+	assert(count==150,"Missing mechanism instances")
+	for n=1,50 do
+		local checkpoint=tower.Checkpoints:FindFirstChild("Checkpoint_"..n)
+		assert(checkpoint:GetAttribute("Stage")==n)
+		assert(checkpoint:IsA("SpawnLocation") and checkpoint.Enabled and checkpoint.CanTouch,"Broken respawn checkpoint")
+		local spawn=checkpoint:GetAttribute("Spawn")
+		assert(spawn.Position.Y>checkpoint.Position.Y+2)
+		local stage=tower.Stages:FindFirstChild(string.format("Stage_%02d_%s",n,Definitions[n].Name))
+		assert(stage and stage:GetAttribute("StageId")==n)
+		assert(stage:GetAttribute("Traversal")==Definitions[n].Traversal,"Traversal variant missing")
+		if Definitions[n].Traversal=="posts" then
+			for node=1,11,2 do
+				local post=stage:FindFirstChild("Post_"..node)
+				assert(post and post.Shape==Enum.PartType.Cylinder,"Missing hop column")
+				local _,top=Route.point(n,node,Definitions[n].Layout)
+				assert(Numeric.near(post.Position.Y+post.Size.X/2,top),"Column top not aligned to route")
+			end
+		elseif Definitions[n].Traversal~="jumps" then
+			local walking=stage:FindFirstChild("Traversal_"..Definitions[n].Traversal)
+			assert(walking,"Missing walking route")
+			local count=0
+			for _,part in walking:GetChildren() do
+				if part:IsA("BasePart") and part:GetAttribute("TraversalSurface") then
+					count+=1
+					assert(part.Anchored and part.CanCollide,"Nonphysical walking beam")
+					assert(Numeric.near(part:GetAttribute("WalkWidth"),Traversal.width(Definitions[n])),"Wrong beam width")
+				end
+			end
+			assert(count>=6,"Incomplete walking route")
+		end
+	end
+	print("[StudioSmoke] PASS: generated hierarchy, daylight, 9 recovery floors, collision matrix, 50 respawn checkpoints, 150 mechanisms, timing and deterministic poses. Physics and persistence still need playtesting.")
+	return true
+end
+return Test
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="39">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+      <token name="CameraMode">0</token>
+      <float name="CharacterJumpPower">50</float>
+      <bool name="CharacterUseJumpPower">true</bool>
+      <float name="CharacterWalkSpeed">16</float>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="40">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="41">
+        <Properties>
+          <string name="Name">TowerClient</string>
+        </Properties>
+        <Item class="LocalScript" referent="42">
+          <Properties>
+            <string name="Name">CoinController</string>
+            <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local tower=workspace:WaitForChild("GeneratedTower")
+local folder=tower:WaitForChild("CollectibleCoins")
+local player=Players.LocalPlayer
+local remotes=ReplicatedStorage:WaitForChild("Remotes")
+local state=nil
+local function update()
+	local day=tower:GetAttribute("CoinDay")
+	for _,coin in folder:GetChildren() do
+		local collected=state and state.Day==day and state.Collected[coin:GetAttribute("CoinId")]
+		coin.LocalTransparencyModifier=if collected then 1 else 0
+	end
+end
+remotes.ShopStateChanged.OnClientEvent:Connect(function(value) if value.Ready and (not state or value.Revision>=state.Revision) then state=value; update() end end)
+folder.ChildAdded:Connect(update)
+tower:GetAttributeChangedSignal("CoinDay"):Connect(update)
+task.spawn(function()
+	if not player:GetAttribute("DataLoaded") then player:GetAttributeChangedSignal("DataLoaded"):Wait() end
+	local ok,value=pcall(function() return remotes.ShopGetState:InvokeServer() end)
+	if ok and value.Ready and (not state or value.Revision>=state.Revision) then state=value; update() end
+end)
+RunService.RenderStepped:Connect(function()
+	local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	local now=workspace:GetServerTimeNow()
+	for _,coin in folder:GetChildren() do
+		local base=coin:GetAttribute("Base")
+		if base and coin.LocalTransparencyModifier<1 and math.abs(base.Position.Y-root.Position.Y)<55 then
+			coin.CFrame=base*CFrame.Angles(0,now*1.6,0)+Vector3.new(0,math.sin(now*2)*0.2,0)
+		end
+	end
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="43">
+          <Properties>
+            <string name="Name">CosmeticEffects</string>
+            <string name="Source"><![CDATA[--!strict
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local Debris=game:GetService("Debris")
+local Players=game:GetService("Players")
+local Catalog=require(ReplicatedStorage:WaitForChild("Shared").CosmeticCatalog)
+local remotes=ReplicatedStorage:WaitForChild("Remotes")
+local function color(rgb) return Color3.fromRGB(rgb[1],rgb[2],rgb[3]) end
+remotes.CosmeticVictory.OnClientEvent:Connect(function(userId,cf,effectId)
+	local item=Catalog.ById[effectId]
+	if not item or item.Category~="Victory" then return end
+	local camera=workspace.CurrentCamera
+	if userId~=Players.LocalPlayer.UserId and camera and (camera.CFrame.Position-cf.Position).Magnitude>150 then return end
+	local anchor=Instance.new("Part")
+	anchor.Name="LocalVictoryEffect"
+	anchor.Size=Vector3.new(0.1,0.1,0.1)
+	anchor.CFrame=cf*CFrame.new(0,5,0)
+	anchor.Anchored=true
+	anchor.Transparency=1
+	anchor.CanCollide=false; anchor.CanQuery=false; anchor.CanTouch=false
+	anchor.Parent=workspace
+	local attachment=Instance.new("Attachment")
+	attachment.Parent=anchor
+	local emitter=Instance.new("ParticleEmitter")
+	emitter.Texture="rbxasset://textures/particles/sparkles_main.dds"
+	emitter.Enabled=false
+	emitter.Rate=0
+	emitter.Color=ColorSequence.new(color(item.Color),color(item.SecondColor or {255,225,100}))
+	emitter.Lifetime=NumberRange.new(1.5,3)
+	emitter.Speed=NumberRange.new(12,24)
+	emitter.SpreadAngle=Vector2.new(180,180)
+	emitter.Acceleration=Vector3.new(0,-15,0)
+	emitter.LightEmission=0.8
+	emitter.Size=NumberSequence.new(if effectId=="fx_prism" then 0.5 else 0.3,0)
+	emitter.Parent=attachment
+	Debris:AddItem(anchor,7)
+	for burst=1,4 do emitter:Emit(if effectId=="fx_default" then 65 else 90); task.wait(0.4) end
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="44">
+          <Properties>
+            <string name="Name">EffectsController</string>
+            <string name="Source"><![CDATA[--!strict
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local Debris=game:GetService("Debris")
+local SoundService=game:GetService("SoundService")
+local remotes=ReplicatedStorage:WaitForChild("Remotes")
+local function chime(pitch)
+	local sound=Instance.new("Sound")
+	sound.SoundId="rbxasset://sounds/electronicpingshort.wav"
+	sound.Volume=0.35
+	sound.PlaybackSpeed=pitch
+	sound.Parent=SoundService
+	sound:Play()
+	Debris:AddItem(sound,3)
+end
+remotes.CheckpointNotification.OnClientEvent:Connect(function() chime(1.15) end)
+remotes.VictoryEvent.OnClientEvent:Connect(function()
+	chime(0.8)
+end)
+-- Local proximity warnings: a single scheduler, no per-part sound loops.
+local CollectionService=game:GetService("CollectionService")
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local tower=workspace:WaitForChild("GeneratedTower")
+local lastStates={}
+local elapsed=0
+local lastSound=0
+RunService.Heartbeat:Connect(function(dt)
+	elapsed+=dt
+	if elapsed<0.15 then return end
+	elapsed=0
+	local character=Players.LocalPlayer.Character
+	local root=character and character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	for _,model in CollectionService:GetTagged("TowerMechanism") do
+		if not model:IsDescendantOf(tower) then continue end
+		local state=model:GetAttribute("VisualState")
+		if state~=lastStates[model] then
+			lastStates[model]=state
+			if state=="warning" and (root.Position-model:GetAttribute("Base").Position).Magnitude<25 then
+				if model:GetAttribute("SoundEnabled") and os.clock()-lastSound>0.4 then chime(0.6); lastSound=os.clock() end
+				local sparks=model:FindFirstChild("WarningSparks",true)
+				if sparks then sparks:Emit(6) end
+			end
+		end
+	end
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="45">
+          <Properties>
+            <string name="Name">HUDController</string>
+            <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local TweenService=game:GetService("TweenService")
+local RunService=game:GetService("RunService")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local Config=require(ReplicatedStorage:WaitForChild("Shared").GameConfig)
+local player=Players.LocalPlayer
+local remotes=ReplicatedStorage:WaitForChild("Remotes")
+local tower=workspace:WaitForChild("GeneratedTower")
+local checkpointFolder=tower:WaitForChild("Checkpoints")
+local gui=Instance.new("ScreenGui")
+gui.Name="MechanicalTowerHUD"
+gui.ResetOnSpawn=false
+gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+gui.Parent=player:WaitForChild("PlayerGui")
+local function round(object,radius)
+	local corner=Instance.new("UICorner")
+	corner.CornerRadius=UDim.new(0,radius)
+	corner.Parent=object
+end
+local function label(parent,name,text,position,size,fontSize,color)
+	local object=Instance.new("TextLabel")
+	object.Name=name
+	object.BackgroundTransparency=1
+	object.Position=position
+	object.Size=size
+	object.Font=Enum.Font.GothamBold
+	object.TextSize=fontSize
+	object.TextColor3=color or Color3.fromRGB(235,242,255)
+	object.TextXAlignment=Enum.TextXAlignment.Left
+	object.Text=text
+	object.Parent=parent
+	return object
+end
+local panel=Instance.new("Frame")
+panel.Name="ProgressPanel"
+panel.Position=UDim2.fromOffset(14,12)
+panel.Size=UDim2.fromOffset(360,182)
+panel.BackgroundColor3=Color3.fromRGB(16,22,34)
+panel.BackgroundTransparency=0.08
+panel.Parent=gui
+round(panel,14)
+local scale=Instance.new("UIScale")
+scale.Parent=panel
+local border=Instance.new("UIStroke")
+border.Color=Config.ZoneColors[1]
+border.Transparency=0.35
+border.Parent=panel
+label(panel,"Title","MEGA / MECHANICAL TOWER",UDim2.fromOffset(18,12),UDim2.fromOffset(326,20),13,Config.ZoneColors[1])
+local zone=label(panel,"Zone","LOADING…",UDim2.fromOffset(18,36),UDim2.fromOffset(326,18),12,Color3.fromRGB(150,169,191))
+local stageText=label(panel,"Stage","Stage: 0 / 50",UDim2.fromOffset(18,61),UDim2.fromOffset(326,30),25)
+local track=Instance.new("Frame")
+track.Size=UDim2.fromOffset(324,8)
+track.Position=UDim2.fromOffset(18,104)
+track.BackgroundColor3=Color3.fromRGB(43,53,70)
+track.ClipsDescendants=true
+track.Parent=panel
+round(track,4)
+local fill=Instance.new("Frame")
+fill.Name="Progress"
+fill.Size=UDim2.fromScale(0,1)
+fill.BackgroundColor3=Config.ZoneColors[1]
+fill.BorderSizePixel=0
+fill.Parent=track
+round(fill,4)
+local stats=label(panel,"Stats","Deaths: 0     Time: 00:00",UDim2.fromOffset(18,123),UDim2.fromOffset(326,22),14)
+local status=label(panel,"SaveStatus","",UDim2.fromOffset(18,150),UDim2.fromOffset(326,18),11,Color3.fromRGB(150,169,191))
+local toast=label(gui,"CheckpointToast","",UDim2.fromScale(0.5,0.24),UDim2.fromScale(0.86,0.09),25)
+toast.AnchorPoint=Vector2.new(0.5,0.5)
+toast.TextXAlignment=Enum.TextXAlignment.Center
+toast.TextScaled=true
+toast.TextStrokeTransparency=0.25
+toast.Visible=false
+local toastConstraint=Instance.new("UITextSizeConstraint")
+toastConstraint.MaxTextSize=28
+toastConstraint.MinTextSize=12
+toastConstraint.Parent=toast
+local victory=Instance.new("Frame")
+victory.Name="VictoryGui"
+victory.AnchorPoint=Vector2.new(0.5,0.5)
+victory.Position=UDim2.fromScale(0.5,0.55)
+victory.Size=UDim2.fromScale(0.86,0.7)
+victory.BackgroundColor3=Color3.fromRGB(15,22,37)
+victory.Visible=false
+victory.Parent=gui
+round(victory,20)
+local aspect=Instance.new("UIAspectRatioConstraint")
+aspect.AspectRatio=1.5
+aspect.DominantAxis=Enum.DominantAxis.Width
+aspect.Parent=victory
+local sizeLimit=Instance.new("UISizeConstraint")
+sizeLimit.MaxSize=Vector2.new(540,360)
+sizeLimit.Parent=victory
+local winTitle=label(victory,"WinTitle","YOU WIN!",UDim2.fromScale(0.07,0.1),UDim2.fromScale(0.86,0.18),40,Config.ZoneColors[5])
+winTitle.TextScaled=true
+winTitle.TextXAlignment=Enum.TextXAlignment.Center
+local winInfo=label(victory,"WinInfo","",UDim2.fromScale(0.08,0.34),UDim2.fromScale(0.84,0.25),19)
+winInfo.TextScaled=true
+winInfo.TextWrapped=true
+winInfo.TextXAlignment=Enum.TextXAlignment.Center
+local replay=Instance.new("TextButton")
+replay.Name="PlayAgain"
+replay.Size=UDim2.fromScale(0.7,0.18)
+replay.Position=UDim2.fromScale(0.15,0.69)
+replay.BackgroundColor3=Config.ZoneColors[5]
+replay.TextColor3=Color3.fromRGB(12,25,35)
+replay.Font=Enum.Font.GothamBold
+replay.Text="Play Again"
+replay.TextScaled=true
+replay.Parent=victory
+round(replay,10)
+replay.Activated:Connect(function() remotes.PlayAgain:FireServer() end)
+local function formatTime(seconds)
+	seconds=math.max(0,math.floor(seconds))
+	return string.format("%02d:%02d",math.floor(seconds/60),seconds%60)
+end
+local progressTween
+local function update()
+	local stage=player:GetAttribute("RunStage") or 0
+	local maximum=player:GetAttribute("MaxStage") or 0
+	local zoneId=math.clamp(math.ceil(math.max(1,stage+1)/10),1,5)
+	local color=Config.ZoneColors[zoneId]
+	stageText.Text=string.format("Stage: %d / 50%s",stage,if player:GetAttribute("Completed") then "  ★" else "")
+	zone.Text=Config.ZoneNames[zoneId].."  /  BEST "..maximum.." OF 50"
+	zone.TextColor3=color
+	border.Color=color
+	fill.BackgroundColor3=color
+	if progressTween then progressTween:Cancel() end
+	progressTween=TweenService:Create(fill,TweenInfo.new(0.4,Enum.EasingStyle.Quad),{Size=UDim2.fromScale(stage/50,1)})
+	progressTween:Play()
+	status.Text=if not player:GetAttribute("DataLoaded") then "Loading progress…"
+		elseif not player:GetAttribute("Persistence") then string.format("Respawn: %d · Safety floor: %d · Studio session",stage,player:GetAttribute("RecoveryStage") or 0)
+		elseif player:GetAttribute("SavePending") then "Saving progress…" else string.format("Saved · Respawn: %d · Safety floor: %d",stage,player:GetAttribute("RecoveryStage") or 0)
+	victory.Visible=player:GetAttribute("Won")==true
+	local finishTime=player:GetAttribute("FinishTime")
+	winInfo.Text=if finishTime then "50 / 50 · MASTER MECHANIC\n"..(if player:GetAttribute("FullRun") then "Full run: " else "Session time: ")..formatTime(finishTime).."\nMaximum progress is preserved."
+		else "50 / 50 · MASTER MECHANIC\nWelcome back to the crown!\nPlay again without losing your record."
+	-- Local color changes are personal: one player's touch never recolors another player's progress.
+	for _,cp in checkpointFolder:GetChildren() do
+		cp.Color=if cp:GetAttribute("Stage")<=stage then Color3.fromRGB(65,255,155) else Config.ZoneColors[math.ceil(cp:GetAttribute("Stage")/10)]
+	end
+end
+for _,attribute in {"DataLoaded","RunStage","MaxStage","Won","Completed","SavePending","Persistence","FinishTime","Deaths","RecoveryStage"} do
+	player:GetAttributeChangedSignal(attribute):Connect(update)
+end
+local function resize()
+	local camera=workspace.CurrentCamera
+	if camera then scale.Scale=math.clamp(math.min(camera.ViewportSize.X/600,camera.ViewportSize.Y/600),0.62,1) end
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(resize)
+local timerAccumulator=0
+RunService.RenderStepped:Connect(function(dt)
+	timerAccumulator+=dt
+	if timerAccumulator<0.1 then return end
+	timerAccumulator=0
+	resize()
+	local started=player:GetAttribute("StartedAt") or workspace:GetServerTimeNow()
+	local duration=player:GetAttribute("FinishTime") or (workspace:GetServerTimeNow()-started)
+	stats.Text=string.format("Deaths: %d     Time: %s",player:GetAttribute("Deaths") or 0,formatTime(duration))
+end)
+local toastVersion=0
+remotes.CheckpointNotification.OnClientEvent:Connect(function(stage)
+	toastVersion+=1
+	local version=toastVersion
+	toast.Text="Checkpoint "..stage.."/50"
+	toast.TextColor3=Config.ZoneColors[math.ceil(stage/10)]
+	toast.Visible=true
+	task.delay(2.5,function() if toastVersion==version then toast.Visible=false end end)
+end)
+checkpointFolder.ChildAdded:Connect(update)
+update()
+resize()
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="46">
+          <Properties>
+            <string name="Name">MechanismClient</string>
+            <string name="Source"><![CDATA[--!strict
+-- Anchored mechanisms use the same server clock on both peers. Only the owning
+-- client carries its character; the server never applies a second displacement.
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local CollectionService=game:GetService("CollectionService")
+local Motion=require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").TrapMotion)
+local player=Players.LocalPlayer
+local tower=workspace:WaitForChild("GeneratedTower")
+local records={}
+local byModel={}
+local function add(model)
+	if byModel[model] or not model:IsDescendantOf(tower) then return end
+	local record={model=model,previous=nil,delta=CFrame.identity}
+	table.insert(records,record)
+	byModel[model]=record
+end
+CollectionService:GetInstanceAddedSignal("TowerMechanism"):Connect(add)
+CollectionService:GetInstanceRemovedSignal("TowerMechanism"):Connect(function(model)
+	local record=byModel[model]
+	if not record then return end
+	byModel[model]=nil
+	local index=table.find(records,record)
+	if index then table.remove(records,index) end
+end)
+for _,model in CollectionService:GetTagged("TowerMechanism") do add(model) end
+local rayParams=RaycastParams.new()
+rayParams.FilterType=Enum.RaycastFilterType.Exclude
+RunService.PreSimulation:Connect(function(dt)
+	local character=player.Character
+	local root=character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+	if not root or not humanoid then return end
+	local now=workspace:GetServerTimeNow()
+	for _,record in records do
+		local model=record.model
+		if math.abs(root.Position.Y-model:GetAttribute("Base").Position.Y)>140 then
+			record.previous=nil
+			continue
+		end
+		local _,_,danger=Motion.evaluate(model,now)
+		Motion.apply(model,now)
+		local current=model:GetPivot()
+		record.delta=if record.previous then current*record.previous:Inverse() else CFrame.identity
+		record.previous=current
+		if model:GetAttribute("Motion")=="gate" then
+			for _,p in model:GetChildren() do
+				if p:IsA("BasePart") and p:GetAttribute("Hazard") then
+					p.Transparency=if danger then 0.05 elseif model:GetAttribute("VisualState")=="warning" then 0.65 else 0.95
+				end
+			end
+		end
+	end
+	if humanoid.Health<=0 or humanoid:GetState()==Enum.HumanoidStateType.Jumping then return end
+	rayParams.FilterDescendantsInstances={character}
+	rayParams.CollisionGroup=root.CollisionGroup
+	local distance=humanoid.HipHeight+root.Size.Y/2+0.65
+	local hit=workspace:Raycast(root.Position,Vector3.new(0,-distance,0),rayParams)
+	if not hit or hit.Normal.Y<0.5 or not hit.Instance:GetAttribute("Carry") then return end
+	-- A ground ray alone must not catch falling characters early or cancel a jump.
+	if root.AssemblyLinearVelocity.Y>8 or root.AssemblyLinearVelocity.Y < -12 then return end
+	local model=hit.Instance:FindFirstAncestorOfClass("Model")
+	local record=model and byModel[model]
+	if not record then return end
+	local displacement=record.delta
+	if model:GetAttribute("Motion")=="belt" then
+		displacement=CFrame.new(model:GetAttribute("Base"):VectorToWorldSpace(model:GetAttribute("Direction"))*model:GetAttribute("BeltSpeed")*math.min(dt,0.05))*displacement
+	end
+	root.CFrame=displacement*root.CFrame
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="47">
+          <Properties>
+            <string name="Name">RecoveryController</string>
+            <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local player=Players.LocalPlayer
+local floors=workspace:WaitForChild("GeneratedTower"):WaitForChild("RecoveryFloors")
+local function update()
+	local unlocked=player:GetAttribute("RecoveryStage") or 0
+	for _,model in floors:GetChildren() do
+		local active=unlocked>=(model:GetAttribute("UnlockStage") or math.huge)
+		for _,object in model:GetDescendants() do
+			if object:IsA("BasePart") then
+				-- Locked floors are pass-through for this character and shown as ghosts.
+				object.LocalTransparencyModifier=if active then 0 else 0.94
+			elseif object:IsA("BillboardGui") then object.Enabled=active end
+		end
+	end
+end
+player:GetAttributeChangedSignal("RecoveryStage"):Connect(update)
+floors.DescendantAdded:Connect(update)
+update()
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="48">
+          <Properties>
+            <string name="Name">ShopController</string>
+            <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local Catalog=require(ReplicatedStorage:WaitForChild("Shared").CosmeticCatalog)
+local remotes=ReplicatedStorage:WaitForChild("Remotes")
+local player=Players.LocalPlayer
+local gui=Instance.new("ScreenGui")
+gui.Name="CosmeticShop"
+gui.ResetOnSpawn=false
+gui.DisplayOrder=10
+gui.Parent=player:WaitForChild("PlayerGui")
+local function rounded(object)
+	local corner=Instance.new("UICorner")
+	corner.CornerRadius=UDim.new(0,10)
+	corner.Parent=object
+end
+local function text(parent,value,position,size,fontSize)
+	local label=Instance.new("TextLabel")
+	label.BackgroundTransparency=1
+	label.Text=value
+	label.Position=position
+	label.Size=size
+	label.Font=Enum.Font.GothamBold
+	label.TextColor3=Color3.fromRGB(235,242,255)
+	label.TextSize=fontSize
+	label.TextXAlignment=Enum.TextXAlignment.Left
+	label.TextWrapped=true
+	label.Parent=parent
+	return label
+end
+local function button(parent,value,position,size)
+	local b=Instance.new("TextButton")
+	b.Text=value
+	b.Position=position
+	b.Size=size
+	b.Font=Enum.Font.GothamBold
+	b.TextSize=14
+	b.TextColor3=Color3.fromRGB(15,24,36)
+	b.BackgroundColor3=Color3.fromRGB(95,225,245)
+	b.Parent=parent
+	rounded(b)
+	return b
+end
+local open=button(gui,"◉ 0\nМАГАЗИН",UDim2.new(1,-12,0,12),UDim2.fromOffset(130,60))
+open.AnchorPoint=Vector2.new(1,0)
+local openScale=Instance.new("UIScale")
+openScale.Parent=open
+local function resize()
+	local camera=workspace.CurrentCamera
+	if camera then openScale.Scale=math.clamp(camera.ViewportSize.X/600,0.75,1) end
+end
+local viewportConnection
+local function bindCamera()
+	if viewportConnection then viewportConnection:Disconnect() end
+	if workspace.CurrentCamera then viewportConnection=workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(resize) end
+	resize()
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)
+bindCamera()
+local panel=Instance.new("Frame")
+panel.AnchorPoint=Vector2.new(0.5,0.5)
+panel.Position=UDim2.fromScale(0.5,0.52)
+panel.Size=UDim2.fromScale(0.92,0.82)
+panel.BackgroundColor3=Color3.fromRGB(17,24,38)
+panel.Visible=false
+panel.Parent=gui
+rounded(panel)
+local limit=Instance.new("UISizeConstraint")
+limit.MaxSize=Vector2.new(720,600)
+limit.Parent=panel
+text(panel,"МАГАЗИН • КОСМЕТИКА",UDim2.fromOffset(14,8),UDim2.new(1,-60,0,26),18)
+local close=button(panel,"×",UDim2.new(1,-43,0,8),UDim2.fromOffset(32,28))
+close.Activated:Connect(function() panel.Visible=false end)
+local balance=text(panel,"Загрузка монет…",UDim2.fromOffset(14,37),UDim2.new(1,-28,0,24),14)
+local hint=text(panel,"Монеты: на маршруте, за этапы и первую победу",UDim2.fromOffset(14,62),UDim2.new(1,-28,0,20),11)
+hint.TextColor3=Color3.fromRGB(155,175,195)
+local tabs=Instance.new("Frame")
+tabs.BackgroundTransparency=1
+tabs.Position=UDim2.fromOffset(12,89)
+tabs.Size=UDim2.new(1,-24,0,32)
+tabs.Parent=panel
+local scroll=Instance.new("ScrollingFrame")
+scroll.BackgroundTransparency=1
+scroll.BorderSizePixel=0
+scroll.Position=UDim2.fromOffset(12,132)
+scroll.Size=UDim2.new(1,-24,1,-144)
+scroll.ScrollBarThickness=5
+scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+scroll.CanvasSize=UDim2.new()
+scroll.Parent=panel
+local layout=Instance.new("UIListLayout")
+layout.Padding=UDim.new(0,8)
+layout.SortOrder=Enum.SortOrder.LayoutOrder
+layout.Parent=scroll
+local notice=text(gui,"",UDim2.fromScale(0.5,0.83),UDim2.fromScale(0.88,0.1),17)
+notice.AnchorPoint=Vector2.new(0.5,0)
+notice.TextXAlignment=Enum.TextXAlignment.Center
+notice.TextStrokeTransparency=0.25
+notice.Visible=false
+local state=nil
+local category="Trail"
+local tabButtons={}
+local function card(name,description,color,actionText,enabled,callback)
+	local row=Instance.new("Frame")
+	row.Name="Card"
+	row.Size=UDim2.new(1,-8,0,84)
+	row.BackgroundColor3=Color3.fromRGB(31,42,59)
+	row.Parent=scroll
+	row.LayoutOrder=#scroll:GetChildren()
+	rounded(row)
+	local nameLabel=text(row,name,UDim2.fromOffset(12,8),UDim2.new(1,-147,0,28),16)
+	nameLabel.TextColor3=color
+	text(row,description,UDim2.fromOffset(12,38),UDim2.new(1,-147,0,36),11)
+	local b=button(row,actionText,UDim2.new(1,-130,0.5,-20),UDim2.fromOffset(118,40))
+	b.TextWrapped=true
+	b.Active=enabled
+	b.AutoButtonColor=enabled
+	if not enabled then b.BackgroundColor3=Color3.fromRGB(99,114,134) end
+	if enabled then b.Activated:Connect(callback) end
+end
+local function render()
+	for _,child in scroll:GetChildren() do if child:IsA("Frame") then child:Destroy() end end
+	for id,b in tabButtons do b.BackgroundColor3=if id==category then Color3.fromRGB(95,225,245) else Color3.fromRGB(135,155,175) end
+	if not state or not state.Ready then balance.Text="Загрузка монет…"; return end
+	open.Text="◉ "..state.Coins.."\nМАГАЗИН"
+	balance.Text="◉ "..state.Coins..(if state.Persistent then " монет" else " монет · Studio: только эта сессия")
+	if category=="Donate" then
+		hint.Text="Поддержка добровольная. Монеты покупают только косметику."
+		for _,product in state.Products do
+			card(product.Name,"Набор монет + титул поддержки. Стоимость подтвердит Roblox.",Color3.fromRGB(255,210,80),
+				if product.Enabled then "Купить за Robux" else "Скоро",product.Enabled,function() remotes.ShopRequest:FireServer("donate",product.Key) end)
+		end
+	else
+		hint.Text="Без бонусов к скорости, прыжку и прохождению"
+		for _,item in Catalog.Items do
+			if item.Category~=category then continue end
+			local owned=state.Owned[item.Id]
+			local equipped=state.Equipped[category]==item.Id
+			local locked=(item.RequiredWin and not state.WinRewarded) or (item.RequiredSupport and not state.Supporter)
+			local description=if item.RequiredWin then "За первую победу на 50-м этапе"
+				elseif item.RequiredSupport then "В подарок за любой набор поддержки"
+				elseif owned then "Есть в вашей коллекции" else "Постоянный косметический предмет"
+			local action=if equipped then "Выбрано" elseif locked then "Закрыто" elseif owned then "Надеть" else "◉ "..item.Price
+			card(item.Name,description,Color3.fromRGB(item.Color[1],item.Color[2],item.Color[3]),action,not equipped and not locked,function()
+				remotes.ShopRequest:FireServer(if owned then "equip" else "buy",item.Id)
+			end)
+		end
+	end
+end
+for i,entry in {{"Trail","Следы"},{"Victory","Победа"},{"Title","Титулы"},{"Donate","Донат"}} do
+	local b=button(tabs,entry[2],UDim2.new((i-1)/4,3,0,0),UDim2.new(0.25,-6,1,0))
+	tabButtons[entry[1]]=b
+	b.Activated:Connect(function() category=entry[1]; render() end)
+end
+local function accept(value)
+	if not value.Ready then return end
+	if state and value.Revision<state.Revision then return end
+	state=value
+	render()
+end
+local function refresh()
+	task.spawn(function()
+		local ok,value=pcall(function() return remotes.ShopGetState:InvokeServer() end)
+		if ok then accept(value) end
+	end)
+end
+open.Activated:Connect(function() panel.Visible=not panel.Visible; if panel.Visible then refresh() end end)
+remotes.ShopStateChanged.OnClientEvent:Connect(accept)
+player:GetAttributeChangedSignal("Coins"):Connect(function() open.Text="◉ "..(player:GetAttribute("Coins") or 0).."\nМАГАЗИН" end)
+player:GetAttributeChangedSignal("DataLoaded"):Connect(refresh)
+local noticeVersion=0
+remotes.ShopNotice.OnClientEvent:Connect(function(message)
+	noticeVersion+=1
+	local version=noticeVersion
+	notice.Text=message
+	notice.Visible=true
+	task.delay(3,function() if version==noticeVersion then notice.Visible=false end end)
+end)
+refresh()
+render()
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="49">
+          <Properties>
+            <string name="Name">StartupController</string>
+            <string name="Source"><![CDATA[--!strict
+-- Independent of Shared, Remotes and GeneratedTower: visible even when one of
+-- those fails to initialize. This script never grants progress or spawns players.
+local Players=game:GetService("Players")
+local player=Players.LocalPlayer
+local gui=Instance.new("ScreenGui")
+gui.Name="TowerStartupStatus"
+gui.ResetOnSpawn=false
+gui.DisplayOrder=100
+gui.Parent=player:WaitForChild("PlayerGui")
+local label=Instance.new("TextLabel")
+label.AnchorPoint=Vector2.new(0.5,0.5)
+label.Position=UDim2.fromScale(0.5,0.48)
+label.Size=UDim2.fromScale(0.85,0.28)
+label.BackgroundColor3=Color3.fromRGB(16,24,37)
+label.BackgroundTransparency=0.06
+label.TextColor3=Color3.fromRGB(175,235,255)
+label.Font=Enum.Font.GothamBold
+label.TextSize=20
+label.TextScaled=true
+label.TextWrapped=true
+label.Parent=gui
+local textLimit=Instance.new("UITextSizeConstraint")
+textLimit.MinTextSize=12
+textLimit.MaxTextSize=20
+textLimit.Parent=label
+local padding=Instance.new("UIPadding")
+padding.PaddingTop=UDim.new(0,12)
+padding.PaddingBottom=UDim.new(0,12)
+padding.PaddingLeft=UDim.new(0,16)
+padding.PaddingRight=UDim.new(0,16)
+padding.Parent=label
+local corner=Instance.new("UICorner")
+corner.CornerRadius=UDim.new(0,12)
+corner.Parent=label
+local messages={
+	starting="Запускаем башню…",modules="Загружаем модули игры…",
+	generating="Строим 50 этапов и страховочные этажи…",services="Запускаем ловушки и чекпоинты…",
+	ready="Загружаем прогресс и персонажа…",
+}
+local function update()
+	local status=workspace:GetAttribute("TowerBootStatus")
+	if status=="ready" and player:GetAttribute("DataLoaded") then
+		gui.Enabled=false
+		return
+	end
+	gui.Enabled=true
+	if status=="failed" then
+		local detail=tostring(workspace:GetAttribute("TowerBootError") or "Unknown error")
+		detail=string.match(detail,"[^\n]+") or detail
+		label.TextColor3=Color3.fromRGB(255,150,130)
+		label.Text="Ошибка запуска игры\n"..string.sub(detail,1,220).."\nОткройте View → Output и скопируйте сообщение [Tower] STARTUP FAILED."
+	else
+		label.Text=messages[status] or "Подключаемся к серверу…"
+	end
+end
+workspace:GetAttributeChangedSignal("TowerBootStatus"):Connect(update)
+workspace:GetAttributeChangedSignal("TowerBootError"):Connect(update)
+player:GetAttributeChangedSignal("DataLoaded"):Connect(update)
+update()
+task.delay(20,function()
+	if gui.Enabled and workspace:GetAttribute("TowerBootStatus")~="failed" then
+		label.Text..="\nЕсли ожидание продолжается, откройте View → Output и проверьте сообщения сервера."
+	end
+end)
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="Workspace" referent="50">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <float name="FallenPartsDestroyHeight">-150</float>
+      <float name="Gravity">196.2</float>
+      <bool name="NeedsPivotMigration">false</bool>
+      <bool name="StreamingEnabled">false</bool>
+    </Properties>
+  </Item>
+</roblox>

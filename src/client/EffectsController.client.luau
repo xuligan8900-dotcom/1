@@ -15,15 +15,6 @@ end
 remotes.CheckpointNotification.OnClientEvent:Connect(function() chime(1.15) end)
 remotes.VictoryEvent.OnClientEvent:Connect(function()
 	chime(0.8)
-	local tower=workspace:WaitForChild("GeneratedTower")
-	local emitter=tower.FinishArea:FindFirstChild("Confetti",true)
-	if emitter then
-		for burst=1,5 do
-			emitter:Emit(80)
-			chime(0.9+burst*0.12)
-			task.wait(0.45)
-		end
-	end
 end)
 -- Local proximity warnings: a single scheduler, no per-part sound loops.
 local CollectionService=game:GetService("CollectionService")

@@ -1,7 +1,7 @@
 --!strict
 local Players=game:GetService("Players")
 Players.CharacterAutoLoads=false
-workspace:SetAttribute("TowerVersion","4.0")
+workspace:SetAttribute("TowerVersion","5.0")
 workspace:SetAttribute("TowerBootStatus","starting")
 workspace:SetAttribute("TowerBootError",nil)
 workspace:SetAttribute("TowerDiagnosticsPassed",nil)
@@ -11,20 +11,27 @@ local function start()
 	local Generator=require(script.Parent.TowerGenerator)
 	local Traps=require(script.Parent.TrapController)
 	local Data=require(script.Parent.PlayerDataService)
+	local Economy=require(script.Parent.EconomyService)
+	local Coins=require(script.Parent.CoinService)
 	local Checkpoints=require(script.Parent.CheckpointService)
 	local Respawn=require(script.Parent.RespawnService)
 	local Rules=require(ReplicatedStorage.Shared.ProgressRules)
 	local remotes=Instance.new("Folder")
 	remotes.Name="Remotes"
-	for _,name in {"CheckpointNotification","VictoryEvent","PlayAgain"} do
+	for _,name in {"CheckpointNotification","VictoryEvent","PlayAgain","ShopRequest","ShopStateChanged","ShopNotice","CosmeticVictory"} do
 		local event=Instance.new("RemoteEvent")
 		event.Name=name
 		event.Parent=remotes
 	end
+	local shopState=Instance.new("RemoteFunction")
+	shopState.Name="ShopGetState"
+	shopState.Parent=remotes
 	remotes.Parent=ReplicatedStorage
 	workspace:SetAttribute("TowerBootStatus","generating")
 	local tower=Generator.generate()
 	workspace:SetAttribute("TowerBootStatus","services")
+	Economy.start(remotes)
+	Coins.start(tower,Economy,Data)
 	Traps.start(tower)
 	Checkpoints.start(tower,Data,remotes)
 	Data.start()
@@ -35,6 +42,11 @@ local function start()
 		joining[player]=true
 		local p=Data.load(player)
 		if not p then joining[player]=nil; return end
+		if not Economy.load(player) then joining[player]=nil; return end
+		task.spawn(function()
+			Economy.stage(player,p.MaxStage)
+			if p.Completed then Economy.change(player,{Kind="win"}) end
+		end)
 		Checkpoints.publish(player,p)
 		connections[player]=Respawn.bind(player,p,tower,Checkpoints.publish)
 		player:SetAttribute("DataLoaded",true)
@@ -47,6 +59,7 @@ local function start()
 		if connections[player] then connections[player]:Disconnect(); connections[player]=nil end
 		Data.save(player,os.clock()+15)
 		Data.Profiles[player]=nil
+		Economy.remove(player)
 		joining[player]=nil
 	end)
 	for _,player in Players:GetPlayers() do task.spawn(join,player) end

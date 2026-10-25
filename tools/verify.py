@@ -42,9 +42,9 @@ def main():
     assert len(embedded) == expected, (len(embedded), expected)
     assert all(node.text and node.text.strip() for node in embedded), "Empty embedded script"
     print(f"PASS: built Roblox XML with {len(embedded)} nonempty scripts/modules", flush=True)
-    shutil.copyfile(place, BUILD / "MechanicalTower-v4.0.rbxlx")
+    shutil.copyfile(place, BUILD / "MechanicalTower-v5.0.rbxlx")
     report = {
-        "release": "4.0",
+        "release": "5.0",
         "luau_files_compiled": len(sources),
         "standalone_test_stdout": result.stdout.strip().splitlines(),
         "place_scripts": len(embedded),
@@ -53,7 +53,7 @@ def main():
         "runtime_smoke": "Included; executes on Play in Studio, not executed in cloud",
         "requires_studio": ["R15 traversal and fairness", "carrier physics under network lag",
                             "multiplayer checkpoints and respawn", "live DataStore",
-                            "mobile layout", "finish effects"],
+                            "mobile layout", "finish effects", "live economy DataStore", "real Marketplace receipts and Robux checkout"],
     }
     (BUILD / "verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
 

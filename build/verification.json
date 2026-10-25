@@ -1,14 +1,15 @@
 {
-  "release": "4.0",
-  "luau_files_compiled": 32,
+  "release": "5.0",
+  "luau_files_compiled": 43,
   "standalone_test_stdout": [
     "Minimum oriented static edge gap: 1.899 studs",
     "Traversal PASS: 21 varied stages, six surface types, connected slopes, R15 column clearance",
-    "PASS: 8997 assertions, 50 stages / 600 route segments / 150 mechanisms / 16 types",
+    "Economy PASS: 100 coin claims/day, stage rewards, purchase/equip, durable receipt replay model, independent wallets",
+    "PASS: 9370 assertions, 50 stages / 600 route segments / 150 mechanisms / 16 types",
     "Maximum static center-to-center segment: 6.092 studs; route rise 1.667 studs",
     "NOT TESTED: Roblox physics, network ownership, Studio UI, live DataStore. See docs/TESTING.md."
   ],
-  "place_scripts": 30,
+  "place_scripts": 40,
   "rojo_build": "passed",
   "roblox_studio_executed": false,
   "runtime_smoke": "Included; executes on Play in Studio, not executed in cloud",
@@ -18,6 +19,8 @@
     "multiplayer checkpoints and respawn",
     "live DataStore",
     "mobile layout",
-    "finish effects"
+    "finish effects",
+    "live economy DataStore",
+    "real Marketplace receipts and Robux checkout"
   ]
 }

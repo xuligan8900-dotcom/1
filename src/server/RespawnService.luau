@@ -2,6 +2,7 @@
 local Players=game:GetService("Players")
 local Config=require(game:GetService("ReplicatedStorage").Shared.GameConfig)
 local Recovery=require(script.Parent.RecoveryService)
+local Economy=require(script.Parent.EconomyService)
 local Respawn={}
 function Respawn.destination(tower,stage)
 	if stage==0 then return CFrame.new(42,12,0) end
@@ -39,6 +40,7 @@ function Respawn.bind(player,profile,tower,publish)
 				if player.Parent and player.Character==character then Respawn.spawn(player,profile,tower) end
 			end)
 		end)
+		task.spawn(Economy.character,player,character)
 	end)
 	return connection
 end

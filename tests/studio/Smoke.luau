@@ -24,6 +24,14 @@ function Test.run(tower)
 	assert(game:GetService("Lighting").ClockTime==13.5,"Daylight settings missing")
 	assert(tower:GetAttribute("Ready"))
 	assert(#tower.Stages:GetChildren()==50)
+	assert(#tower.CollectibleCoins:GetChildren()==100,"Missing map coins")
+	local CoinRules=require(Shared.EconomyRules)
+	for _,coin in tower.CollectibleCoins:GetChildren() do
+		assert(CoinRules.validCoin(coin:GetAttribute("CoinId")),"Bad coin ID")
+		assert(coin.Anchored and not coin.CanCollide and not coin.CanTouch,"Coins affect physics")
+	end
+	local remotes=game:GetService("ReplicatedStorage").Remotes
+	assert(remotes.ShopGetState:IsA("RemoteFunction") and remotes.ShopRequest:IsA("RemoteEvent"),"Shop protocol missing")
 	assert(#tower.Checkpoints:GetChildren()==50)
 	assert(#tower.RouteGates:GetChildren()==100)
 	local count=0
