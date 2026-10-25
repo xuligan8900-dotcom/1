@@ -2,6 +2,7 @@
 """Compile all Luau, run real pure-module tests, build and inspect the Rojo place."""
 from pathlib import Path
 import json
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -13,7 +14,7 @@ BUILD = ROOT / "build"
 
 def run(*args, capture=False):
     try:
-        return subprocess.run([str(a) for a in args], cwd=ROOT, check=True, text=True,
+        return subprocess.run([str(a) for a in args], cwd=ROOT, check=True, text=True, errors="replace",
                               stdout=subprocess.PIPE if capture else None,
                               stderr=subprocess.PIPE if capture else None)
     except subprocess.CalledProcessError as error:
@@ -41,7 +42,9 @@ def main():
     assert len(embedded) == expected, (len(embedded), expected)
     assert all(node.text and node.text.strip() for node in embedded), "Empty embedded script"
     print(f"PASS: built Roblox XML with {len(embedded)} nonempty scripts/modules", flush=True)
+    shutil.copyfile(place, BUILD / "MechanicalTower-v3.1.rbxlx")
     report = {
+        "release": "3.1",
         "luau_files_compiled": len(sources),
         "standalone_test_stdout": result.stdout.strip().splitlines(),
         "place_scripts": len(embedded),

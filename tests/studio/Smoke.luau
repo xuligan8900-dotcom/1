@@ -8,6 +8,7 @@ function Test.run(tower)
 	local Motion=require(Shared.TrapMotion)
 	local Recovery=require(Shared.RecoveryRules)
 	local Geometry=require(Shared.TrapGeometry)
+	local Numeric=require(Shared.Numeric)
 	local PhysicsService=game:GetService("PhysicsService")
 	assert(Route.validate(Definitions))
 	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
@@ -50,7 +51,7 @@ function Test.run(tower)
 		end
 		if model:GetAttribute("Kind")=="blade" or model:GetAttribute("Kind")=="doubleRotor" then
 			assert(math.abs(model.CrossSweep.Position.Y-model.Sweep.Position.Y)<0.001,"Unfair double-height blade")
-			assert(model.Sweep.Size.X==(if model:GetAttribute("Kind")=="blade" then Geometry.BladeLength else Geometry.SweepLength),"Unsafe blade reach")
+			assert(Numeric.near(model.Sweep.Size.X,if model:GetAttribute("Kind")=="blade" then Geometry.BladeLength else Geometry.SweepLength),"Unsafe blade reach")
 		end
 		if model:GetAttribute("Stage")==15 then assert(safe/speed>=5.5-0.00001,"Stage 15 crossing window missing") end
 		for _,part in model:GetDescendants() do

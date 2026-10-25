@@ -1,6 +1,14 @@
-# MEGA MECHANICAL TOWER — 50 STAGES · v3
+# MEGA MECHANICAL TOWER — 50 STAGES · v3.1
 
 Проект Roblox / Luau: детерминированная индустриальная башня высотой **1008 studs**, 50 этапов, 50 персональных чекпоинтов и 150 механических станций. Никаких платных моделей, пакетов Toolbox, внешних HTTP-запросов или обязательных пользовательских ассетов.
+
+## Исправление запуска v3.1
+
+Откройте **`build/MechanicalTower-v3.1.rbxlx`** из свежего GitHub-архива (или `MechanicalTower-v3.1.rbxlx` из вложенного пакета). Это отдельное имя, чтобы не перепутать с уже открытым старым place.
+
+В v3 StudioSmoke сравнивал размер `Part.Size.X` с литералом2,8/6,2 на точное равенство. Движок хранит размер в float32: например6,2 превращается в6,199999809. Проверка ложно падала до подключения обработки входа игроков, а CharacterAutoLoads уже был выключен: карта могла создаться, но персонаж не появлялся.
+
+В v3.1 сравнение использует допуск0,001stud; тест float32-round-trip воспроизводит и проверяет эту регрессию. StudioSmoke по-прежнему выполняется и сообщает PASS/FAILED, но запускается после подключения игрового цикла; его результат отражается в Workspace.TowerDiagnosticsPassed. Ошибки генерации и обязательных инвариантов не скрываются. Теперь отдельный экран показывает стадии загрузки или сообщение об ошибке, даже если Shared/Remotes/карта ещё не готовы.
 
 ## Изменения v3: промежутки и ловушки после CP14
 
@@ -29,7 +37,7 @@
 5. Следуйте неоновым полосам и стрелкам. Зелёный/жёлтый/красный сигнал обозначает состояние ловушки; зелёные вращающиеся детали безопасны, красные опасны. На каждом этапе есть безопасные остановки на узлах 4 и 8.
 6. Падение не телепортирует на чекпоинт: открытое страховочное перекрытие останавливает падение внутри башни, от него можно подниматься снова. Смерть от красной ловушки или нижней KillZone возвращает на последний чекпоинт текущего забега. Через меню Roblox можно использовать Reset Character.
 
-**Проверено в облаке:** компиляция Luau, 7684 автоматических проверок чистых модулей, сборка Rojo и структура XML. **Roblox Studio здесь не запускался.** Приложен готовый place и автоматическая Studio-диагностика; физику, игровой баланс, сетевую задержку, DataStore и мобильный HUD необходимо проверить по [docs/TESTING.md](docs/TESTING.md) перед публикацией. Это реализованный проект для дальнейшего Studio playtest, а не заявление о завершённой сертификации всех 50 этажей.
+**Проверено в облаке:** компиляция Luau, 7691 автоматических проверок чистых модулей, сборка Rojo и структура XML. **Roblox Studio здесь не запускался.** Приложен готовый place и автоматическая Studio-диагностика; физику, игровой баланс, сетевую задержку, DataStore и мобильный HUD необходимо проверить по [docs/TESTING.md](docs/TESTING.md) перед публикацией. Это реализованный проект для дальнейшего Studio playtest, а не заявление о завершённой сертификации всех 50 этажей.
 
 ## Редактирование исходников через Rojo
 
@@ -83,11 +91,12 @@ python3 tools/verify.py
 ```text
 src/shared/       GameConfig, StageDefinitions, Route, TrapDefinitions,
                   TrapMotion, MotionMath, ProgressRules, DataSchema,
-                  RecoveryRules, Difficulty, TrapGeometry
+                  RecoveryRules, Difficulty, TrapGeometry, Numeric
 src/server/       GameBootstrap, TowerGenerator, StageBuilder, BuildUtil,
                   TrapFactory, TrapController, CheckpointService,
                   PlayerDataService, RespawnService, RecoveryService
-src/client/       MechanismClient, HUDController, EffectsController, RecoveryController
+src/client/       MechanismClient, HUDController, EffectsController, RecoveryController,
+                  StartupController
 tests/run.luau    самостоятельные тесты маршрутов, прогресса, merge данных
 tests/studio/    Smoke — автоматически запускается только в Studio
 tools/           закреплённые инструменты, компиляция, сборка, отчёт

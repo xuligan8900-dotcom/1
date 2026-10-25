@@ -147,6 +147,19 @@ return table.freeze(Math)
       </Item>
       <Item class="ModuleScript" referent="7">
         <Properties>
+          <string name="Name">Numeric</string>
+          <string name="Source"><![CDATA[--!strict
+local Numeric={}
+function Numeric.near(a,b,tolerance)
+	-- Roblox Vector3/Part.Size use float32, whereas Luau literals use doubles.
+	return math.abs(a-b)<=(tolerance or 0.001)
+end
+return table.freeze(Numeric)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
           <string name="Name">ProgressRules</string>
           <string name="Source"><![CDATA[--!strict
 -- No client input participates in this transition. Pure functions are tested outside Studio.
@@ -183,7 +196,7 @@ return table.freeze(Rules)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="9">
         <Properties>
           <string name="Name">RecoveryRules</string>
           <string name="Source"><![CDATA[--!strict
@@ -205,7 +218,7 @@ return table.freeze(Rules)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="10">
         <Properties>
           <string name="Name">Route</string>
           <string name="Source"><![CDATA[--!strict
@@ -273,7 +286,7 @@ return table.freeze(Route)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="11">
         <Properties>
           <string name="Name">StageDefinitions</string>
           <string name="Source"><![CDATA[--!strict
@@ -344,7 +357,7 @@ return table.freeze(definitions)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="11">
+      <Item class="ModuleScript" referent="12">
         <Properties>
           <string name="Name">TrapDefinitions</string>
           <string name="Source"><![CDATA[--!strict
@@ -386,7 +399,7 @@ return table.freeze(definitions)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">TrapGeometry</string>
           <string name="Source"><![CDATA[--!strict
@@ -409,7 +422,7 @@ return table.freeze({
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">TrapMotion</string>
           <string name="Source"><![CDATA[--!strict
@@ -457,15 +470,15 @@ return Motion
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="14">
+  <Item class="ServerScriptService" referent="15">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="15">
+    <Item class="Folder" referent="16">
       <Properties>
         <string name="Name">TowerServer</string>
       </Properties>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">BuildUtil</string>
           <string name="Source"><![CDATA[--!strict
@@ -515,7 +528,7 @@ return Util
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="17">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">CheckpointService</string>
           <string name="Source"><![CDATA[--!strict
@@ -590,75 +603,103 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Script" referent="18">
+      <Item class="Script" referent="19">
         <Properties>
           <string name="Name">GameBootstrap</string>
           <token name="RunContext">0</token>
           <string name="Source"><![CDATA[--!strict
 local Players=game:GetService("Players")
 Players.CharacterAutoLoads=false
-local ReplicatedStorage=game:GetService("ReplicatedStorage")
-local Generator=require(script.Parent.TowerGenerator)
-local Traps=require(script.Parent.TrapController)
-local Data=require(script.Parent.PlayerDataService)
-local Checkpoints=require(script.Parent.CheckpointService)
-local Respawn=require(script.Parent.RespawnService)
-local Rules=require(ReplicatedStorage.Shared.ProgressRules)
-local remotes=Instance.new("Folder")
-remotes.Name="Remotes"
-for _,name in {"CheckpointNotification","VictoryEvent","PlayAgain"} do
-	local event=Instance.new("RemoteEvent")
-	event.Name=name
-	event.Parent=remotes
+workspace:SetAttribute("TowerVersion","3.1")
+workspace:SetAttribute("TowerBootStatus","starting")
+workspace:SetAttribute("TowerBootError",nil)
+workspace:SetAttribute("TowerDiagnosticsPassed",nil)
+local function start()
+	local ReplicatedStorage=game:GetService("ReplicatedStorage")
+	workspace:SetAttribute("TowerBootStatus","modules")
+	local Generator=require(script.Parent.TowerGenerator)
+	local Traps=require(script.Parent.TrapController)
+	local Data=require(script.Parent.PlayerDataService)
+	local Checkpoints=require(script.Parent.CheckpointService)
+	local Respawn=require(script.Parent.RespawnService)
+	local Rules=require(ReplicatedStorage.Shared.ProgressRules)
+	local remotes=Instance.new("Folder")
+	remotes.Name="Remotes"
+	for _,name in {"CheckpointNotification","VictoryEvent","PlayAgain"} do
+		local event=Instance.new("RemoteEvent")
+		event.Name=name
+		event.Parent=remotes
+	end
+	remotes.Parent=ReplicatedStorage
+	workspace:SetAttribute("TowerBootStatus","generating")
+	local tower=Generator.generate()
+	workspace:SetAttribute("TowerBootStatus","services")
+	Traps.start(tower)
+	Checkpoints.start(tower,Data,remotes)
+	Data.start()
+	local connections={}
+	local joining={}
+	local function join(player)
+		if joining[player] then return end
+		joining[player]=true
+		local p=Data.load(player)
+		if not p then joining[player]=nil; return end
+		Checkpoints.publish(player,p)
+		connections[player]=Respawn.bind(player,p,tower,Checkpoints.publish)
+		player:SetAttribute("DataLoaded",true)
+		Respawn.spawn(player,p,tower)
+	end
+	Players.PlayerAdded:Connect(join)
+	Players.PlayerRemoving:Connect(function(player)
+		local profile=Data.Profiles[player]
+		if profile and profile.CollisionConnection then profile.CollisionConnection:Disconnect() end
+		if connections[player] then connections[player]:Disconnect(); connections[player]=nil end
+		Data.save(player,os.clock()+15)
+		Data.Profiles[player]=nil
+		joining[player]=nil
+	end)
+	for _,player in Players:GetPlayers() do task.spawn(join,player) end
+	remotes.PlayAgain.OnServerEvent:Connect(function(player)
+		local p=Data.Profiles[player]
+		if not p or p.Spawning or not Rules.replay(p,workspace:GetServerTimeNow(),os.clock()) then return end
+		Checkpoints.publish(player,p)
+		player.RespawnLocation=tower.Foundation.LobbySpawn
+		local character=player.Character
+		local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+		if character and humanoid and humanoid.Health>0 then
+			local root=character:FindFirstChild("HumanoidRootPart")
+			if root then root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero end
+			character:PivotTo(Respawn.destination(tower,0))
+		else Respawn.spawn(player,p,tower) end
+	end)
+	print("[Tower] Server initialized. Characters spawn only after deterministic generation and data loading.")
+
+	workspace:SetAttribute("TowerBootStatus","ready")
+	-- Diagnostics still execute and report failure, but a diagnostic assertion must
+	-- not strand all players with CharacterAutoLoads=false before join is bound.
+	if game:GetService("RunService"):IsStudio() then
+		task.defer(function()
+			local ok,result=xpcall(function()
+				return require(game:GetService("ServerStorage").TowerTests.Smoke).run(tower)
+			end,debug.traceback)
+			workspace:SetAttribute("TowerDiagnosticsPassed",ok and result==true)
+			if not ok then
+				warn("[StudioSmoke] FAILED (game started; see diagnostic traceback): "..tostring(result))
+			end
+		end)
+	end
 end
-remotes.Parent=ReplicatedStorage
-local tower=Generator.generate()
-if game:GetService("RunService"):IsStudio() then
-	require(game:GetService("ServerStorage").TowerTests.Smoke).run(tower)
+local ok,err=xpcall(start,debug.traceback)
+if not ok then
+	local phase=workspace:GetAttribute("TowerBootStatus")
+	workspace:SetAttribute("TowerBootError",tostring(err))
+	workspace:SetAttribute("TowerBootStatus","failed")
+	warn("[Tower] STARTUP FAILED at "..tostring(phase)..": "..tostring(err))
 end
-Traps.start(tower)
-Checkpoints.start(tower,Data,remotes)
-Data.start()
-local connections={}
-local joining={}
-local function join(player)
-	if joining[player] then return end
-	joining[player]=true
-	local p=Data.load(player)
-	if not p then joining[player]=nil; return end
-	Checkpoints.publish(player,p)
-	connections[player]=Respawn.bind(player,p,tower,Checkpoints.publish)
-	player:SetAttribute("DataLoaded",true)
-	Respawn.spawn(player,p,tower)
-end
-Players.PlayerAdded:Connect(join)
-Players.PlayerRemoving:Connect(function(player)
-	local profile=Data.Profiles[player]
-	if profile and profile.CollisionConnection then profile.CollisionConnection:Disconnect() end
-	if connections[player] then connections[player]:Disconnect(); connections[player]=nil end
-	Data.save(player,os.clock()+15)
-	Data.Profiles[player]=nil
-	joining[player]=nil
-end)
-for _,player in Players:GetPlayers() do task.spawn(join,player) end
-remotes.PlayAgain.OnServerEvent:Connect(function(player)
-	local p=Data.Profiles[player]
-	if not p or p.Spawning or not Rules.replay(p,workspace:GetServerTimeNow(),os.clock()) then return end
-	Checkpoints.publish(player,p)
-	player.RespawnLocation=tower.Foundation.LobbySpawn
-	local character=player.Character
-	local humanoid=character and character:FindFirstChildOfClass("Humanoid")
-	if character and humanoid and humanoid.Health>0 then
-		local root=character:FindFirstChild("HumanoidRootPart")
-		if root then root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero end
-		character:PivotTo(Respawn.destination(tower,0))
-	else Respawn.spawn(player,p,tower) end
-end)
-print("[Tower] Server initialized. Characters spawn only after deterministic generation and data loading.")
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="19">
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">PlayerDataService</string>
           <string name="Source"><![CDATA[--!strict
@@ -762,7 +803,7 @@ return Data
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">RecoveryService</string>
           <string name="Source"><![CDATA[--!strict
@@ -842,7 +883,7 @@ return Recovery
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="21">
+      <Item class="ModuleScript" referent="22">
         <Properties>
           <string name="Name">RespawnService</string>
           <string name="Source"><![CDATA[--!strict
@@ -893,7 +934,7 @@ return Respawn
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="22">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">StageBuilder</string>
           <string name="Source"><![CDATA[--!strict
@@ -982,7 +1023,7 @@ return Builder
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="23">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">TowerGenerator</string>
           <string name="Source"><![CDATA[--!strict
@@ -1099,7 +1140,7 @@ return Generator
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="24">
+      <Item class="ModuleScript" referent="25">
         <Properties>
           <string name="Name">TrapController</string>
           <string name="Source"><![CDATA[--!strict
@@ -1183,7 +1224,7 @@ return Controller
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="25">
+      <Item class="ModuleScript" referent="26">
         <Properties>
           <string name="Name">TrapFactory</string>
           <string name="Source"><![CDATA[--!strict
@@ -1314,15 +1355,15 @@ return Factory
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="26">
+  <Item class="ServerStorage" referent="27">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
-    <Item class="Folder" referent="27">
+    <Item class="Folder" referent="28">
       <Properties>
         <string name="Name">TowerTests</string>
       </Properties>
-      <Item class="ModuleScript" referent="28">
+      <Item class="ModuleScript" referent="29">
         <Properties>
           <string name="Name">Smoke</string>
           <string name="Source"><![CDATA[--!strict
@@ -1335,6 +1376,7 @@ function Test.run(tower)
 	local Motion=require(Shared.TrapMotion)
 	local Recovery=require(Shared.RecoveryRules)
 	local Geometry=require(Shared.TrapGeometry)
+	local Numeric=require(Shared.Numeric)
 	local PhysicsService=game:GetService("PhysicsService")
 	assert(Route.validate(Definitions))
 	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
@@ -1377,7 +1419,7 @@ function Test.run(tower)
 		end
 		if model:GetAttribute("Kind")=="blade" or model:GetAttribute("Kind")=="doubleRotor" then
 			assert(math.abs(model.CrossSweep.Position.Y-model.Sweep.Position.Y)<0.001,"Unfair double-height blade")
-			assert(model.Sweep.Size.X==(if model:GetAttribute("Kind")=="blade" then Geometry.BladeLength else Geometry.SweepLength),"Unsafe blade reach")
+			assert(Numeric.near(model.Sweep.Size.X,if model:GetAttribute("Kind")=="blade" then Geometry.BladeLength else Geometry.SweepLength),"Unsafe blade reach")
 		end
 		if model:GetAttribute("Stage")==15 then assert(safe/speed>=5.5-0.00001,"Stage 15 crossing window missing") end
 		for _,part in model:GetDescendants() do
@@ -1403,7 +1445,7 @@ return Test
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="29">
+  <Item class="StarterPlayer" referent="30">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <token name="CameraMode">0</token>
@@ -1411,15 +1453,15 @@ return Test
       <bool name="CharacterUseJumpPower">true</bool>
       <float name="CharacterWalkSpeed">16</float>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="30">
+    <Item class="StarterPlayerScripts" referent="31">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="31">
+      <Item class="Folder" referent="32">
         <Properties>
           <string name="Name">TowerClient</string>
         </Properties>
-        <Item class="LocalScript" referent="32">
+        <Item class="LocalScript" referent="33">
           <Properties>
             <string name="Name">EffectsController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1480,7 +1522,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="33">
+        <Item class="LocalScript" referent="34">
           <Properties>
             <string name="Name">HUDController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1658,7 +1700,7 @@ resize()
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="34">
+        <Item class="LocalScript" referent="35">
           <Properties>
             <string name="Name">MechanismClient</string>
             <string name="Source"><![CDATA[--!strict
@@ -1734,7 +1776,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="35">
+        <Item class="LocalScript" referent="36">
           <Properties>
             <string name="Name">RecoveryController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1759,10 +1801,81 @@ update()
 ]]></string>
           </Properties>
         </Item>
+        <Item class="LocalScript" referent="37">
+          <Properties>
+            <string name="Name">StartupController</string>
+            <string name="Source"><![CDATA[--!strict
+-- Independent of Shared, Remotes and GeneratedTower: visible even when one of
+-- those fails to initialize. This script never grants progress or spawns players.
+local Players=game:GetService("Players")
+local player=Players.LocalPlayer
+local gui=Instance.new("ScreenGui")
+gui.Name="TowerStartupStatus"
+gui.ResetOnSpawn=false
+gui.DisplayOrder=100
+gui.Parent=player:WaitForChild("PlayerGui")
+local label=Instance.new("TextLabel")
+label.AnchorPoint=Vector2.new(0.5,0.5)
+label.Position=UDim2.fromScale(0.5,0.48)
+label.Size=UDim2.fromScale(0.85,0.28)
+label.BackgroundColor3=Color3.fromRGB(16,24,37)
+label.BackgroundTransparency=0.06
+label.TextColor3=Color3.fromRGB(175,235,255)
+label.Font=Enum.Font.GothamBold
+label.TextSize=20
+label.TextScaled=true
+label.TextWrapped=true
+label.Parent=gui
+local textLimit=Instance.new("UITextSizeConstraint")
+textLimit.MinTextSize=12
+textLimit.MaxTextSize=20
+textLimit.Parent=label
+local padding=Instance.new("UIPadding")
+padding.PaddingTop=UDim.new(0,12)
+padding.PaddingBottom=UDim.new(0,12)
+padding.PaddingLeft=UDim.new(0,16)
+padding.PaddingRight=UDim.new(0,16)
+padding.Parent=label
+local corner=Instance.new("UICorner")
+corner.CornerRadius=UDim.new(0,12)
+corner.Parent=label
+local messages={
+	starting="Запускаем башню…",modules="Загружаем модули игры…",
+	generating="Строим 50 этапов и страховочные этажи…",services="Запускаем ловушки и чекпоинты…",
+	ready="Загружаем прогресс и персонажа…",
+}
+local function update()
+	local status=workspace:GetAttribute("TowerBootStatus")
+	if status=="ready" and player:GetAttribute("DataLoaded") then
+		gui.Enabled=false
+		return
+	end
+	gui.Enabled=true
+	if status=="failed" then
+		local detail=tostring(workspace:GetAttribute("TowerBootError") or "Unknown error")
+		detail=string.match(detail,"[^\n]+") or detail
+		label.TextColor3=Color3.fromRGB(255,150,130)
+		label.Text="Ошибка запуска игры\n"..string.sub(detail,1,220).."\nОткройте View → Output и скопируйте сообщение [Tower] STARTUP FAILED."
+	else
+		label.Text=messages[status] or "Подключаемся к серверу…"
+	end
+end
+workspace:GetAttributeChangedSignal("TowerBootStatus"):Connect(update)
+workspace:GetAttributeChangedSignal("TowerBootError"):Connect(update)
+player:GetAttributeChangedSignal("DataLoaded"):Connect(update)
+update()
+task.delay(20,function()
+	if gui.Enabled and workspace:GetAttribute("TowerBootStatus")~="failed" then
+		label.Text..="\nЕсли ожидание продолжается, откройте View → Output и проверьте сообщения сервера."
+	end
+end)
+]]></string>
+          </Properties>
+        </Item>
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="36">
+  <Item class="Workspace" referent="38">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="FallenPartsDestroyHeight">-150</float>
