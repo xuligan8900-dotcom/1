@@ -1,0 +1,65 @@
+--!strict
+-- Each row defines actual geometry and three mechanism stations (nodes 2, 6, 10).
+-- Layouts are deliberately explicit: edits to one stage never randomize the others.
+local rows = {
+	{"First Steps", "pusher", "move", "door", "wide", 0.78},
+	{"Transfer Line", "move", "move", "move", "weave", 0.80},
+	{"Slow Sweep", "rotor", "rotor", "rotor", "arc", 0.65},
+	{"Beam Induction", "laser", "laser", "door", "outer", 0.80},
+	{"Vanishing Steel", "fade", "fade", "timer", "inner", 0.82},
+	{"Balance Beams", "pusher", "rotor", "pusher", "beams", 0.75},
+	{"Hammer School", "pendulum", "pendulum", "pendulum", "weave", 0.72},
+	{"Belt Works", "conveyor", "conveyor", "pusher", "wide", 0.84},
+	{"Piston Elevators", "lift", "lift", "lift", "arc", 0.78},
+	{"First Assembly", "move", "rotor", "move", "outer", 0.88},
+	{"Gear Teeth", "gear", "gear", "gear", "inner", 0.82},
+	{"Timed Beams", "laser", "door", "laser", "zigzag", 0.90},
+	{"Orbital Transfer", "orbit", "orbit", "orbit", "arc", 0.85},
+	{"Hydraulic Hall", "press", "press", "press", "wide", 0.84},
+	{"Blade Foundry", "blade", "blade", "rotor", "outer", 0.88},
+	{"Walking Columns", "lift", "move", "lift", "columns", 0.94},
+	{"Side Impact", "pusher", "pusher", "pusher", "beams", 0.96},
+	{"Pendulum Gap", "pendulum", "pendulum", "move", "inner", 0.98},
+	{"Short Circuit", "timer", "fade", "timer", "zigzag", 1.00},
+	{"Mechanical Gauntlet", "gear", "press", "laser", "weave", 1.00},
+	{"Twin Sweep", "doubleRotor", "doubleRotor", "rotor", "outer", 1.02},
+	{"Safe Sectors", "gear", "ring", "gear", "arc", 1.00},
+	{"Laser Pattern", "laser", "laser", "laser", "wide", 1.05},
+	{"Asynchronous Transit", "move", "orbit", "move", "zigzag", 1.04},
+	{"Press Sequence", "press", "press", "press", "inner", 1.08},
+	{"Open Air", "move", "pusher", "lift", "islands", 1.04},
+	{"Ring Gates", "ring", "ring", "ring", "outer", 1.04},
+	{"Belt and Ram", "conveyor", "pusher", "conveyor", "beams", 1.06},
+	{"Shifting Maze", "door", "pusher", "door", "maze", 1.08},
+	{"Clockwork Room", "press", "laser", "rotor", "weave", 1.10},
+	{"Fast Sweep", "rotor", "doubleRotor", "rotor", "arc", 1.18},
+	{"Fading Beams", "fade", "laser", "timer", "zigzag", 1.12},
+	{"Elevator Exchange", "lift", "lift", "orbit", "columns", 1.12},
+	{"Heavy Hammers", "pendulum", "pendulum", "pendulum", "wide", 1.12},
+	{"Needle Walk", "rotor", "pusher", "door", "needles", 1.12},
+	{"Danger Orbit", "gear", "blade", "orbit", "outer", 1.14},
+	{"Pressure Windows", "press", "press", "press", "inner", 1.20},
+	{"Mechanical Arms", "pusher", "pusher", "doubleRotor", "maze", 1.16},
+	{"Temporary Route", "timer", "timer", "timer", "islands", 1.18},
+	{"Grand Assembly", "pendulum", "gear", "press", "weave", 1.20},
+	{"Rotor Convergence", "doubleRotor", "ring", "gear", "zigzag", 1.20},
+	{"Photon Windows", "laser", "laser", "laser", "beams", 1.22},
+	{"Vertical Network", "lift", "orbit", "lift", "columns", 1.18},
+	{"Titan Machinery", "gear", "pendulum", "rotor", "outer", 1.20},
+	{"Alternating Chamber", "door", "press", "laser", "maze", 1.22},
+	{"Fading Heights", "fade", "timer", "fade", "islands", 1.22},
+	{"Synchronized Steel", "press", "move", "press", "arc", 1.24},
+	{"Last Gauntlet", "conveyor", "doubleRotor", "pendulum", "weave", 1.22},
+	{"Master Mechanic", "gear", "press", "laser", "needles", 1.24},
+	{"Crown Ascent", "lift", "ring", "door", "crown", 1.05},
+}
+local definitions = {}
+for i, row in rows do
+	definitions[i] = table.freeze({
+		Id = i, Name = row[1], Traps = {row[2], row[3], row[4]},
+		Layout = row[5], Speed = row[6], Zone = math.ceil(i / 10),
+		-- Different phase offsets are deterministic, never randomized at runtime.
+		Phase = (i * 0.37) % 3,
+	})
+end
+return table.freeze(definitions)

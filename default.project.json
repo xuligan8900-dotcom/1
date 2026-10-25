@@ -1,0 +1,57 @@
+{
+  "name": "MEGA MECHANICAL TOWER — 50 STAGES",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "TowerServer": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "$properties": {
+        "CharacterWalkSpeed": 16,
+        "CharacterUseJumpPower": true,
+        "CharacterJumpPower": 50,
+        "CameraMode": "Classic"
+      },
+      "StarterPlayerScripts": {
+        "TowerClient": {
+          "$path": "src/client"
+        }
+      }
+    },
+    "Workspace": {
+      "$properties": {
+        "Gravity": 196.2,
+        "FallenPartsDestroyHeight": -150,
+        "StreamingEnabled": false
+      }
+    },
+    "Lighting": {
+      "$properties": {
+        "ClockTime": 19,
+        "Brightness": 2,
+        "Ambient": [
+          0.23,
+          0.27,
+          0.36
+        ],
+        "OutdoorAmbient": [
+          0.3,
+          0.34,
+          0.44
+        ]
+      }
+    },
+    "ServerStorage": {
+      "TowerTests": {
+        "$path": "tests/studio"
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+/build/
+/tools/bin/
+*.rbxl.lock
+*.rbxlx.lock
+.DS_Store

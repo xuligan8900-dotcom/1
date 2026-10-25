@@ -1,0 +1,14 @@
+[
+  {
+    "name": "rojo",
+    "version": "7.7.1",
+    "url": "https://github.com/rojo-rbx/rojo/releases/download/v7.7.1/rojo-7.7.1-linux-x86_64.zip",
+    "sha256": "00feb4fa0829a1dd72b49df2639da519a352bfe13cadcd83969e2ba2bb5693c4"
+  },
+  {
+    "name": "luau",
+    "version": "0.744",
+    "url": "https://github.com/luau-lang/luau/releases/download/0.744/luau-ubuntu.zip",
+    "sha256": "6506f0852c623aaffcb28494aac16c26dc04a269ea0e16cc0aafc8c8ac79f3ec"
+  }
+]
