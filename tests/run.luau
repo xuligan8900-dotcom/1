@@ -7,6 +7,7 @@ local Traps=require("../src/shared/TrapDefinitions")
 local MotionMath=require("../src/shared/MotionMath")
 local Recovery=require("../src/shared/RecoveryRules")
 local Difficulty=require("../src/shared/Difficulty")
+local Geometry=require("../src/shared/TrapGeometry")
 local checks=0
 local function check(condition,message)
 	assert(condition,message)
@@ -22,8 +23,8 @@ for i,stage in Stages do
 	check(#stage.Traps==3,"Three real mechanisms per floor")
 	for station,kind in stage.Traps do
 		local balanced=Difficulty.trap(Traps[kind],stage,station)
-		check(balanced.Safe/balanced.Speed>=1.8-0.00001,"Insufficient safe window")
-		check(balanced.Warning/balanced.Speed>=0.75-0.00001,"Insufficient warning")
+		check(balanced.Safe/balanced.Speed>=3.6-0.00001,"Insufficient safe window")
+		check(balanced.Warning/balanced.Speed>=1.2-0.00001,"Insufficient warning")
 		check(Traps[kind]~=nil,"Missing mechanism definition")
 		used[kind]=true
 	end
@@ -80,6 +81,68 @@ for i,stage in Stages do
 		end
 	end
 end
+-- Regression for checkpoint 14 -> stage 15: green means genuinely harmless,
+-- the complete crossing window fits two standard jumps plus generous reaction time.
+local jumpSeconds=(50+math.sqrt(50^2-2*196.2*(20/12)))/196.2
+for _,stage in Stages do
+	for station,kind in stage.Traps do
+		local trap=Difficulty.trap(Traps[kind],stage,station)
+		local safeSeconds=trap.Safe/trap.Speed
+		check(safeSeconds>2*jumpSeconds+1.5,"Not enough time to enter and leave trap")
+		for _,fraction in {0.1,0.5,0.9} do
+			local _,_,_,state,harmful=MotionMath.sample(trap.Motion,trap.Safe*fraction,trap.Safe,trap.Warning,trap.Active,trap.Travel)
+			check(state=="safe" and not harmful,"Green trap still inflicts damage")
+		end
+		local node=station*4-2
+		if kind=="rotor" or kind=="doubleRotor" or kind=="blade" then
+			local x,_,z=Route.point(stage.Id,node,stage.Layout)
+			local px,_,pz=Route.point(stage.Id,node-1,stage.Layout)
+			local distance=math.sqrt((x-px)^2+(z-pz)^2)
+			check(Geometry.SweepLength/2+1.3<distance,"Sweep hits avatar waiting on previous platform")
+		end
+		if stage.Id==15 then check(safeSeconds>=5.5-0.00001,"Stage 15 safety window missing") end
+		if kind=="press" then
+			check(Geometry.PressRestHeight-Geometry.PressHalfHeight>Geometry.AvatarHeight+1,"Press blocks a standing avatar in its safe phase")
+		elseif kind=="door" then
+			check(Geometry.DoorRestCenter-Geometry.DoorHalfHeight+trap.Travel>Geometry.AvatarHeight+1,"Open door has insufficient headroom")
+		end
+	end
+end
+-- Check actual oriented platform edge projections, not just center spacing.
+local minStaticGap=math.huge
+local function halfExtent(stage,node,ex,ez)
+	local x,_,z=Route.point(stage.Id,node,stage.Layout)
+	local fx,fz
+	if node==12 then
+		local length=math.sqrt(x*x+z*z); fx,fz=-z/length,x/length
+	else
+		local nx,_,nz=Route.point(stage.Id,node+1,stage.Layout)
+		local length=math.sqrt((nx-x)^2+(nz-z)^2); fx,fz=(nx-x)/length,(nz-z)/length
+	end
+	return math.abs(ex*(-fz)+ez*fx)*Route.width(stage.Id,node,stage.Layout)/2
+		+math.abs(ex*fx+ez*fz)*Route.depth(stage.Id,node)/2
+end
+for _,stage in Stages do
+	for n=1,12 do
+		-- Carrier docking and circular gears intentionally have independent envelopes.
+		if n%4==2 or (n-1)%4==2 then continue end
+		local x,_,z=Route.point(stage.Id,n,stage.Layout)
+		local px,_,pz=Route.point(stage.Id,n-1,stage.Layout)
+		local distance=math.sqrt((x-px)^2+(z-pz)^2)
+		local ex,ez=(x-px)/distance,(z-pz)/distance
+		local gap=distance-halfExtent(stage,n,ex,ez)-halfExtent(stage,n-1,ex,ez)
+		minStaticGap=math.min(minStaticGap,gap)
+		check(gap>=1.7,string.format("Static platforms too close: stage %d, node %d, gap %.3f",stage.Id,n,gap))
+	end
+end
+-- Door closure is continuous across state boundaries, with no instant engulfing.
+local door=Traps.door
+for _,boundary in {door.Safe,door.Safe+door.Warning,door.Safe+door.Warning+door.Active} do
+	local before=MotionMath.sample("door",boundary-0.0001,door.Safe,door.Warning,door.Active,door.Travel)
+	local after=MotionMath.sample("door",boundary+0.0001,door.Safe,door.Warning,door.Active,door.Travel)
+	check(math.abs(after-before)<0.01,"Door teleports closed onto player")
+end
+print(string.format("Minimum oriented static edge gap: %.3f studs",minStaticGap))
 local p={RunStage=0,MaxStage=0,Won=false,Completed=false,Gate=0,LastReplay=-10}
 for n=1,50 do
 	check(not Rules.canCheckpoint(p,n+1,2,10),"Skipped checkpoint accepted")

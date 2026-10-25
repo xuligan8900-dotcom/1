@@ -7,6 +7,7 @@ function Test.run(tower)
 	local Route=require(Shared.Route)
 	local Motion=require(Shared.TrapMotion)
 	local Recovery=require(Shared.RecoveryRules)
+	local Geometry=require(Shared.TrapGeometry)
 	local PhysicsService=game:GetService("PhysicsService")
 	assert(Route.validate(Definitions))
 	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
@@ -34,11 +35,12 @@ function Test.run(tower)
 		local active=model:GetAttribute("Active")
 		local speed=model:GetAttribute("Speed")
 		local phase=model:GetAttribute("Phase")
-		assert(speed>0 and warning/speed>=0.75-0.00001,"Warning window too short")
-		assert(safe/speed>=1.8-0.00001,"Safe window too short")
+		assert(speed>0 and warning/speed>=1.2-0.00001,"Warning window too short")
+		assert(safe/speed>=3.6-0.00001,"Safe window too short")
 		for _,sample in {0.1,safe+warning*0.5,safe+warning+active*0.5} do
 			local time=(sample-phase)/speed
-			local first,state=Motion.evaluate(model,time)
+			local first,state,danger=Motion.evaluate(model,time)
+			assert(danger==(state=="active"),"Green or warning trap can damage player")
 			local second=Motion.evaluate(model,time)
 			assert(first==second,"Nondeterministic mechanism")
 			assert(first.Position.X==first.Position.X,"NaN mechanism transform")
@@ -46,6 +48,11 @@ function Test.run(tower)
 			elseif sample<safe+warning then assert(state=="warning")
 			else assert(state=="active") end
 		end
+		if model:GetAttribute("Kind")=="blade" or model:GetAttribute("Kind")=="doubleRotor" then
+			assert(math.abs(model.CrossSweep.Position.Y-model.Sweep.Position.Y)<0.001,"Unfair double-height blade")
+			assert(model.Sweep.Size.X==(if model:GetAttribute("Kind")=="blade" then Geometry.BladeLength else Geometry.SweepLength),"Unsafe blade reach")
+		end
+		if model:GetAttribute("Stage")==15 then assert(safe/speed>=5.5-0.00001,"Stage 15 crossing window missing") end
 		for _,part in model:GetDescendants() do
 			if part:IsA("BasePart") then assert(part.Anchored,"Uncontrolled physics assembly") end
 		end

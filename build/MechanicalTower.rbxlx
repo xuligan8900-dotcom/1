@@ -70,10 +70,15 @@ function Difficulty.trap(definition,stage,station)
 	end
 	local progress=(stage.Id-1)/49
 	result.Speed*=stage.Speed*(1+(station-2)*0.07)*(1+0.25*progress)
-	-- Faster late-game cycles, but retain readable warnings and a crossing window.
-	result.Safe=math.max(1.8*result.Speed,result.Safe*(1-0.2*progress))
-	result.Warning=math.max(0.75*result.Speed,result.Warning)
-	result.Active*=1+0.35*progress
+	-- Every harmful family now has a genuine green crossing window.
+	-- Wider gaps demand time for two jumps, not just a short dash across a deck.
+	local greenSeconds=4.8-1.2*progress
+	-- Stage 15 follows checkpoint 14: teach the blade rhythm without a speed wall.
+	if stage.Id==15 then greenSeconds=5.5; result.Speed*=0.85 end
+	if result.Motion=="fade" then greenSeconds+=0.5 end
+	result.Safe=math.max(greenSeconds*result.Speed,result.Safe*(1-0.1*progress))
+	result.Warning=math.max(1.2*result.Speed,result.Warning)
+	result.Active*=1+0.2*progress
 	return result
 end
 return table.freeze(Difficulty)
@@ -89,7 +94,7 @@ return table.freeze({
 	StageCount = 50,
 	StageHeight = 20,
 	BaseHeight = 8,
-	Radius = 36,
+	Radius = 42,
 	WalkSpeed = 16,
 	JumpPower = 50,
 	Gravity = 196.2,
@@ -124,9 +129,17 @@ function Math.sample(mode,t,safe,warning,active,travel)
 	elseif mode=="pulse" or mode=="press" then amount=pulse*travel
 	elseif mode=="spin" or mode=="ring" then angle=t
 	elseif mode=="swing" then angle=math.sin(t)*0.68
-	elseif mode=="door" then amount=if state=="active" then 0 else travel end
-	local continuous=mode=="spin" or mode=="swing" or mode=="ring"
-	return amount,orbitZ,angle,state,continuous or state=="active"
+	elseif mode=="door" then
+		if state=="safe" then amount=travel
+		elseif state=="warning" then
+			local closing=(cycle-safe)/warning
+			amount=travel*(1-(closing*closing*(3-2*closing)))
+		else
+			local opening=math.clamp(((cycle-safe-warning)/active-0.55)/0.45,0,1)
+			amount=travel*(opening*opening*(3-2*opening))
+		end
+	end
+	return amount,orbitZ,angle,state,state=="active"
 end
 return table.freeze(Math)
 ]]></string>
@@ -215,22 +228,22 @@ local profiles = {
 function Route.point(stage, node, layout)
 	local profile = assert(profiles[layout], "Unknown layout")
 	local angle = ((stage - 1) * math.pi / 2) + node / 12 * math.pi / 2
-	local radius = 36 + profile[node + 1]
+	local radius = 42 + profile[node + 1]
 	return radius * math.cos(angle), 8 + (stage - 1) * 20 + node * 20 / 12, radius * math.sin(angle)
 end
 function Route.width(stage, node, layout)
-	if node % 4 == 0 then return 6 end
+	if node % 4 == 0 then return 5.2 end
 	if layout == "needles" then return 2.2 end
 	if layout == "beams" then return 2.6 end
 	if layout == "islands" then return 3.1 end
-	return math.max(2.8,4.8-stage*0.04)
+	return math.max(2.8,4.2-stage*0.03)
 end
 function Route.depth(stage,node)
-	if node%4==0 then return 5 end
-	return math.max(2.8,3.8-stage*0.02)
+	if node%4==0 then return 2.8 end
+	return math.max(2.5,3.0-stage*0.01)
 end
 function Route.carrierSize(stage)
-	return math.max(3.8,4.8-stage*0.02),math.max(3.2,3.8-stage*0.012)
+	return math.max(3.8,4.8-stage*0.02),math.max(2.8,3.3-stage*0.01)
 end
 function Route.validate(definitions)
 	assert(#definitions == 50, "Exactly 50 stages required")
@@ -246,7 +259,7 @@ function Route.validate(definitions)
 			local horizontal = math.sqrt((x-px)^2 + (z-pz)^2)
 			assert(horizontal <= 6.6, "Route exceeds conservative jump envelope")
 			assert(y > py and y-py < 2, "Invalid rise")
-			assert(math.abs(x) < 40 and math.abs(z) < 40, "Structural collision")
+			assert(math.abs(x) < 46 and math.abs(z) < 46, "Structural collision")
 		end
 		if i < 50 then
 			local x,y,z = Route.point(i,12,stage.Layout)
@@ -337,9 +350,9 @@ return table.freeze(definitions)
           <string name="Source"><![CDATA[--!strict
 -- Period = safe + warning + active. Motion never uses random state.
 local definitions = {
-	move = {Motion="slide", Carry=true, Travel=2.5, Speed=0.65},
+	move = {Motion="slide", Carry=true, Travel=1.8, Speed=0.65},
 	lift = {Motion="lift", Carry=true, Travel=2.2, Speed=0.6},
-	orbit = {Motion="orbit", Carry=true, Travel=1.8, Speed=0.7},
+	orbit = {Motion="orbit", Carry=true, Travel=1.4, Speed=0.7},
 	rotor = {Motion="spin", Damage=100, Speed=0.7},
 	doubleRotor = {Motion="spin", Damage=100, Speed=0.8},
 	gear = {Motion="spin", Carry=true, Speed=0.6},
@@ -374,6 +387,29 @@ return table.freeze(definitions)
         </Properties>
       </Item>
       <Item class="ModuleScript" referent="12">
+        <Properties>
+          <string name="Name">TrapGeometry</string>
+          <string name="Source"><![CDATA[--!strict
+-- Sizes used by the factory and clearance regression tests (all in studs).
+return table.freeze({
+	SweepLength=6.2,
+	SweepThickness=0.4,
+	SweepHeight=1.25,
+	BladeLength=2.8,
+	BladeCenter=1.55,
+	GearDiameter=5.8,
+	GearToothRadius=3.15,
+	-- Body clearance measured from the platform, excluding decorative piston rods.
+	AvatarHeight=6,
+	PressRestHeight=10,
+	PressHalfHeight=0.75,
+	DoorRestCenter=3.2,
+	DoorHalfHeight=3,
+})
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">TrapMotion</string>
           <string name="Source"><![CDATA[--!strict
@@ -421,15 +457,15 @@ return Motion
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="13">
+  <Item class="ServerScriptService" referent="14">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="14">
+    <Item class="Folder" referent="15">
       <Properties>
         <string name="Name">TowerServer</string>
       </Properties>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">BuildUtil</string>
           <string name="Source"><![CDATA[--!strict
@@ -479,7 +515,7 @@ return Util
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">CheckpointService</string>
           <string name="Source"><![CDATA[--!strict
@@ -554,7 +590,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Script" referent="17">
+      <Item class="Script" referent="18">
         <Properties>
           <string name="Name">GameBootstrap</string>
           <token name="RunContext">0</token>
@@ -622,7 +658,7 @@ print("[Tower] Server initialized. Characters spawn only after deterministic gen
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="19">
         <Properties>
           <string name="Name">PlayerDataService</string>
           <string name="Source"><![CDATA[--!strict
@@ -726,7 +762,7 @@ return Data
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="19">
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">RecoveryService</string>
           <string name="Source"><![CDATA[--!strict
@@ -806,7 +842,7 @@ return Recovery
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">RespawnService</string>
           <string name="Source"><![CDATA[--!strict
@@ -815,7 +851,7 @@ local Config=require(game:GetService("ReplicatedStorage").Shared.GameConfig)
 local Recovery=require(script.Parent.RecoveryService)
 local Respawn={}
 function Respawn.destination(tower,stage)
-	if stage==0 then return CFrame.new(36,12,0) end
+	if stage==0 then return CFrame.new(42,12,0) end
 	return tower.Checkpoints:FindFirstChild("Checkpoint_"..stage):GetAttribute("Spawn")
 end
 function Respawn.spawn(player,profile,tower)
@@ -857,7 +893,7 @@ return Respawn
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="21">
+      <Item class="ModuleScript" referent="22">
         <Properties>
           <string name="Name">StageBuilder</string>
           <string name="Source"><![CDATA[--!strict
@@ -895,7 +931,7 @@ function Builder.build(tower, definition)
 			if node%4==0 then
 				-- Side rails leave both route ends open and never close the fall shafts.
 				for side=-1,1,2 do
-					U.part(stage,"RestRail",Vector3.new(0.25,2.5,4),cf*CFrame.new(side*(width/2+0.25),1.25,0),accent)
+					U.part(stage,"RestRail",Vector3.new(0.25,2.5,2.3),cf*CFrame.new(side*(width/2+0.25),1.25,0),accent)
 				end
 			end
 			if node==0 then U.label(p,string.format("%02d · %s\n⇧ FOLLOW THE LIGHTS",id,definition.Name),accent) end
@@ -915,7 +951,7 @@ function Builder.build(tower, definition)
 		if node==12 then
 			local cp=Instance.new("SpawnLocation")
 			cp.Name="Checkpoint_"..id
-			cp.Size=Vector3.new(5,0.2,4)
+			cp.Size=Vector3.new(4.8,0.2,2.6)
 			cp.CFrame=cf*CFrame.new(0,0.12,0)
 			cp.Color=accent
 			cp.Material=Enum.Material.Neon
@@ -934,7 +970,7 @@ function Builder.build(tower, definition)
 		elseif node%4==1 then
 			local sign = U.part(stage,"Direction",Vector3.new(0.15,0.15,0.15),cf*CFrame.new(0,2.5,0),accent,nil,false)
 			sign.Transparency=1
-			U.label(sign,"⇧",accent)
+			U.label(sign,"WAIT FOR GREEN\n⇧ JUMP",accent)
 		end
 	end
 	-- A few industrial details per zone, all outside the jumping corridor.
@@ -946,7 +982,7 @@ return Builder
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="22">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">TowerGenerator</string>
           <string name="Source"><![CDATA[--!strict
@@ -978,13 +1014,13 @@ function Generator.generate()
 	-- Parent only when the complete map is ready; auto character loading is disabled by bootstrap.
 	for _,name in {"Foundation","StructuralSupports","Stages","Checkpoints","KillZones","FinishArea","RouteGates","RecoveryFloors"} do U.folder(tower,name) end
 	U.part(tower.Foundation,"Foundation",Vector3.new(108,4,108),CFrame.new(0,0,0),Color3.fromRGB(35,40,50),Enum.Material.Concrete)
-	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(36,5,0))
-	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(36,3,-15))
-	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(36,4,-11))
+	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(42,5,0))
+	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(42,3,-15))
+	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(42,4,-11))
 	local spawn=Instance.new("SpawnLocation")
 	spawn.Name="LobbySpawn"
 	spawn.Size=Vector3.new(8,1,8)
-	spawn.CFrame=CFrame.new(36,8,0)
+	spawn.CFrame=CFrame.new(42,8,0)
 	spawn.Anchored=true
 	spawn.Neutral=true
 	spawn.Duration=0
@@ -1063,7 +1099,7 @@ return Generator
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="23">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">TrapController</string>
           <string name="Source"><![CDATA[--!strict
@@ -1147,7 +1183,7 @@ return Controller
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="24">
+      <Item class="ModuleScript" referent="25">
         <Properties>
           <string name="Name">TrapFactory</string>
           <string name="Source"><![CDATA[--!strict
@@ -1156,6 +1192,7 @@ local Definitions = require(Shared.TrapDefinitions)
 local U = require(script.Parent.BuildUtil)
 local Difficulty=require(Shared.Difficulty)
 local Route=require(Shared.Route)
+local Geometry=require(Shared.TrapGeometry)
 local Factory = {}
 local metal = Color3.fromRGB(75,83,104)
 local danger = Color3.fromRGB(255,75,70)
@@ -1173,13 +1210,13 @@ function Factory.create(parent, kind, surface, stage, station)
 	local direction=Vector3.new(definition.DirectionX,definition.DirectionY,definition.DirectionZ)
 	model:SetAttribute("Direction",if direction.Magnitude>0 then direction.Unit else Vector3.xAxis)
 	local base = surface
-	if kind == "press" then base *= CFrame.new(0,10,0)
+	if kind == "press" then base *= CFrame.new(0,Geometry.PressRestHeight,0)
 	elseif kind == "pendulum" then base *= CFrame.new(0,12,0)
 	elseif kind == "pusher" then base *= CFrame.new(-6,2,0)
 	elseif kind == "ring" then base *= CFrame.new(0,3.5,0)
-	elseif kind == "door" then base *= CFrame.new(0,3.2,0)
+	elseif kind == "door" then base *= CFrame.new(0,Geometry.DoorRestCenter,0)
 	elseif kind == "laser" then base *= CFrame.new(0,2,0)
-	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then base *= CFrame.new(0,1.6,0)
+	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then base *= CFrame.new(0,Geometry.SweepHeight,0)
 	end
 	model:SetAttribute("Base",base)
 	model.WorldPivot = base
@@ -1208,22 +1245,32 @@ function Factory.create(parent, kind, surface, stage, station)
 			U.label(model.Deck, "⇧ BELT ⇧",Color3.fromRGB(255,195,60))
 		end
 	elseif kind == "gear" then
-		local deck = piece("GearDeck",Vector3.new(0.9,7,7),CFrame.new(0,-0.45,0)*CFrame.Angles(0,0,math.pi/2),false,true,true)
+		local deck = piece("GearDeck",Vector3.new(0.9,Geometry.GearDiameter,Geometry.GearDiameter),CFrame.new(0,-0.45,0)*CFrame.Angles(0,0,math.pi/2),false,true,true)
 		deck.Shape = Enum.PartType.Cylinder
 		for n=0,11 do
 			local a=n*math.pi/6
-			piece("Tooth",Vector3.new(1,1,1.4),CFrame.new(math.cos(a)*3.8,-0.3,math.sin(a)*3.8)*CFrame.Angles(0,-a,0),true,false,false)
+			piece("Tooth",Vector3.new(0.7,0.65,0.9),CFrame.new(math.cos(a)*Geometry.GearToothRadius,-0.3,math.sin(a)*Geometry.GearToothRadius)*CFrame.Angles(0,-a,0),true,false,false)
 		end
-		piece("Sector",Vector3.new(1.5,0.08,5),CFrame.new(0,0.06,0),false,false,false).Color=Color3.fromRGB(60,230,170)
+		piece("Sector",Vector3.new(1.5,0.08,4),CFrame.new(0,0.06,0),false,false,false).Color=Color3.fromRGB(60,230,170)
 	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then
 		piece("Axle",Vector3.new(0.6,2,0.6),CFrame.new(0,-1,0),false,false,false)
-		piece("Sweep",Vector3.new(11,0.45,0.55),CFrame.new(),true,false,false)
-		if kind ~= "rotor" then
-			piece("CrossSweep",Vector3.new(0.55,0.45,11),CFrame.new(0,if kind=="doubleRotor" then 1.3 else 0,0),true,false,false)
+		if kind=="blade" then
+			-- Three short paddles; no lethal upper bar or reach into the waiting pad.
+			for index=0,2 do
+				local angle=index*math.pi*2/3
+				local offset=CFrame.new(math.cos(angle)*Geometry.BladeCenter,0,math.sin(angle)*Geometry.BladeCenter)*CFrame.Angles(0,-angle,0)
+				piece(if index==0 then "Sweep" elseif index==1 then "CrossSweep" else "ThirdSweep",
+					Vector3.new(Geometry.BladeLength,Geometry.SweepThickness,0.75),offset,true,false,false)
+			end
+		else
+			piece("Sweep",Vector3.new(Geometry.SweepLength,Geometry.SweepThickness,0.45),CFrame.new(),true,false,false)
+			if kind=="doubleRotor" then
+				piece("CrossSweep",Vector3.new(0.45,Geometry.SweepThickness,Geometry.SweepLength),CFrame.new(),true,false,false)
+			end
 		end
 	elseif kind == "pendulum" then
 		piece("Shaft",Vector3.new(0.35,9,0.35),CFrame.new(0,-4.5,0),false,false,false)
-		piece("Hammer",Vector3.new(if stage.Id>=34 then 5.5 else 4,2.5,3),CFrame.new(0,-9.5,0),true,false,false)
+		piece("Hammer",Vector3.new(if stage.Id>=34 then 4.2 else 3.5,2.2,2.5),CFrame.new(0,-9.5,0),true,false,false)
 	elseif kind == "press" then
 		piece("Piston",Vector3.new(1,5,1),CFrame.new(0,3,0),false,false,false)
 		piece("Crusher",Vector3.new(7,1.5,4),CFrame.new(),true,false,true)
@@ -1231,7 +1278,6 @@ function Factory.create(parent, kind, surface, stage, station)
 		piece("Ram",Vector3.new(1.2,3,3),CFrame.new(),true,false,true)
 	elseif kind == "laser" then
 		piece("Beam",Vector3.new(10,0.35,0.35),CFrame.new(),true,false,false)
-		piece("UpperBeam",Vector3.new(10,0.35,0.35),CFrame.new(0,2.5,0),true,false,false)
 	elseif kind == "ring" then
 		for n=0,9 do
 			local a=n*math.pi/6
@@ -1268,15 +1314,15 @@ return Factory
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="25">
+  <Item class="ServerStorage" referent="26">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
-    <Item class="Folder" referent="26">
+    <Item class="Folder" referent="27">
       <Properties>
         <string name="Name">TowerTests</string>
       </Properties>
-      <Item class="ModuleScript" referent="27">
+      <Item class="ModuleScript" referent="28">
         <Properties>
           <string name="Name">Smoke</string>
           <string name="Source"><![CDATA[--!strict
@@ -1288,6 +1334,7 @@ function Test.run(tower)
 	local Route=require(Shared.Route)
 	local Motion=require(Shared.TrapMotion)
 	local Recovery=require(Shared.RecoveryRules)
+	local Geometry=require(Shared.TrapGeometry)
 	local PhysicsService=game:GetService("PhysicsService")
 	assert(Route.validate(Definitions))
 	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
@@ -1315,11 +1362,12 @@ function Test.run(tower)
 		local active=model:GetAttribute("Active")
 		local speed=model:GetAttribute("Speed")
 		local phase=model:GetAttribute("Phase")
-		assert(speed>0 and warning/speed>=0.75-0.00001,"Warning window too short")
-		assert(safe/speed>=1.8-0.00001,"Safe window too short")
+		assert(speed>0 and warning/speed>=1.2-0.00001,"Warning window too short")
+		assert(safe/speed>=3.6-0.00001,"Safe window too short")
 		for _,sample in {0.1,safe+warning*0.5,safe+warning+active*0.5} do
 			local time=(sample-phase)/speed
-			local first,state=Motion.evaluate(model,time)
+			local first,state,danger=Motion.evaluate(model,time)
+			assert(danger==(state=="active"),"Green or warning trap can damage player")
 			local second=Motion.evaluate(model,time)
 			assert(first==second,"Nondeterministic mechanism")
 			assert(first.Position.X==first.Position.X,"NaN mechanism transform")
@@ -1327,6 +1375,11 @@ function Test.run(tower)
 			elseif sample<safe+warning then assert(state=="warning")
 			else assert(state=="active") end
 		end
+		if model:GetAttribute("Kind")=="blade" or model:GetAttribute("Kind")=="doubleRotor" then
+			assert(math.abs(model.CrossSweep.Position.Y-model.Sweep.Position.Y)<0.001,"Unfair double-height blade")
+			assert(model.Sweep.Size.X==(if model:GetAttribute("Kind")=="blade" then Geometry.BladeLength else Geometry.SweepLength),"Unsafe blade reach")
+		end
+		if model:GetAttribute("Stage")==15 then assert(safe/speed>=5.5-0.00001,"Stage 15 crossing window missing") end
 		for _,part in model:GetDescendants() do
 			if part:IsA("BasePart") then assert(part.Anchored,"Uncontrolled physics assembly") end
 		end
@@ -1350,7 +1403,7 @@ return Test
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="28">
+  <Item class="StarterPlayer" referent="29">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <token name="CameraMode">0</token>
@@ -1358,15 +1411,15 @@ return Test
       <bool name="CharacterUseJumpPower">true</bool>
       <float name="CharacterWalkSpeed">16</float>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="29">
+    <Item class="StarterPlayerScripts" referent="30">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="30">
+      <Item class="Folder" referent="31">
         <Properties>
           <string name="Name">TowerClient</string>
         </Properties>
-        <Item class="LocalScript" referent="31">
+        <Item class="LocalScript" referent="32">
           <Properties>
             <string name="Name">EffectsController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1427,7 +1480,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="32">
+        <Item class="LocalScript" referent="33">
           <Properties>
             <string name="Name">HUDController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1605,7 +1658,7 @@ resize()
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="33">
+        <Item class="LocalScript" referent="34">
           <Properties>
             <string name="Name">MechanismClient</string>
             <string name="Source"><![CDATA[--!strict
@@ -1681,7 +1734,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="34">
+        <Item class="LocalScript" referent="35">
           <Properties>
             <string name="Name">RecoveryController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1709,7 +1762,7 @@ update()
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="35">
+  <Item class="Workspace" referent="36">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="FallenPartsDestroyHeight">-150</float>

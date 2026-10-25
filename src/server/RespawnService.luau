@@ -4,7 +4,7 @@ local Config=require(game:GetService("ReplicatedStorage").Shared.GameConfig)
 local Recovery=require(script.Parent.RecoveryService)
 local Respawn={}
 function Respawn.destination(tower,stage)
-	if stage==0 then return CFrame.new(36,12,0) end
+	if stage==0 then return CFrame.new(42,12,0) end
 	return tower.Checkpoints:FindFirstChild("Checkpoint_"..stage):GetAttribute("Spawn")
 end
 function Respawn.spawn(player,profile,tower)

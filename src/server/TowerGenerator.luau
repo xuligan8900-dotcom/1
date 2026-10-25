@@ -27,13 +27,13 @@ function Generator.generate()
 	-- Parent only when the complete map is ready; auto character loading is disabled by bootstrap.
 	for _,name in {"Foundation","StructuralSupports","Stages","Checkpoints","KillZones","FinishArea","RouteGates","RecoveryFloors"} do U.folder(tower,name) end
 	U.part(tower.Foundation,"Foundation",Vector3.new(108,4,108),CFrame.new(0,0,0),Color3.fromRGB(35,40,50),Enum.Material.Concrete)
-	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(36,5,0))
-	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(36,3,-15))
-	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(36,4,-11))
+	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(42,5,0))
+	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(42,3,-15))
+	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(42,4,-11))
 	local spawn=Instance.new("SpawnLocation")
 	spawn.Name="LobbySpawn"
 	spawn.Size=Vector3.new(8,1,8)
-	spawn.CFrame=CFrame.new(36,8,0)
+	spawn.CFrame=CFrame.new(42,8,0)
 	spawn.Anchored=true
 	spawn.Neutral=true
 	spawn.Duration=0

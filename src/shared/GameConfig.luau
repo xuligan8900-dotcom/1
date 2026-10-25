@@ -4,7 +4,7 @@ return table.freeze({
 	StageCount = 50,
 	StageHeight = 20,
 	BaseHeight = 8,
-	Radius = 36,
+	Radius = 42,
 	WalkSpeed = 16,
 	JumpPower = 50,
 	Gravity = 196.2,

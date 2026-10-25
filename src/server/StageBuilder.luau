@@ -33,7 +33,7 @@ function Builder.build(tower, definition)
 			if node%4==0 then
 				-- Side rails leave both route ends open and never close the fall shafts.
 				for side=-1,1,2 do
-					U.part(stage,"RestRail",Vector3.new(0.25,2.5,4),cf*CFrame.new(side*(width/2+0.25),1.25,0),accent)
+					U.part(stage,"RestRail",Vector3.new(0.25,2.5,2.3),cf*CFrame.new(side*(width/2+0.25),1.25,0),accent)
 				end
 			end
 			if node==0 then U.label(p,string.format("%02d · %s\n⇧ FOLLOW THE LIGHTS",id,definition.Name),accent) end
@@ -53,7 +53,7 @@ function Builder.build(tower, definition)
 		if node==12 then
 			local cp=Instance.new("SpawnLocation")
 			cp.Name="Checkpoint_"..id
-			cp.Size=Vector3.new(5,0.2,4)
+			cp.Size=Vector3.new(4.8,0.2,2.6)
 			cp.CFrame=cf*CFrame.new(0,0.12,0)
 			cp.Color=accent
 			cp.Material=Enum.Material.Neon
@@ -72,7 +72,7 @@ function Builder.build(tower, definition)
 		elseif node%4==1 then
 			local sign = U.part(stage,"Direction",Vector3.new(0.15,0.15,0.15),cf*CFrame.new(0,2.5,0),accent,nil,false)
 			sign.Transparency=1
-			U.label(sign,"⇧",accent)
+			U.label(sign,"WAIT FOR GREEN\n⇧ JUMP",accent)
 		end
 	end
 	-- A few industrial details per zone, all outside the jumping corridor.

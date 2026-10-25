@@ -1,11 +1,12 @@
 {
-  "luau_files_compiled": 26,
+  "luau_files_compiled": 27,
   "standalone_test_stdout": [
-    "PASS: 6733 assertions, 50 stages / 600 route segments / 150 mechanisms / 16 types",
-    "Maximum static center-to-center segment: 5.356 studs; route rise 1.667 studs",
+    "Minimum oriented static edge gap: 1.899 studs",
+    "PASS: 7684 assertions, 50 stages / 600 route segments / 150 mechanisms / 16 types",
+    "Maximum static center-to-center segment: 6.092 studs; route rise 1.667 studs",
     "NOT TESTED: Roblox physics, network ownership, Studio UI, live DataStore. See docs/TESTING.md."
   ],
-  "place_scripts": 25,
+  "place_scripts": 26,
   "rojo_build": "passed",
   "roblox_studio_executed": false,
   "runtime_smoke": "Included; executes on Play in Studio, not executed in cloud",

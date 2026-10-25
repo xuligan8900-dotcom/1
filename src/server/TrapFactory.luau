@@ -4,6 +4,7 @@ local Definitions = require(Shared.TrapDefinitions)
 local U = require(script.Parent.BuildUtil)
 local Difficulty=require(Shared.Difficulty)
 local Route=require(Shared.Route)
+local Geometry=require(Shared.TrapGeometry)
 local Factory = {}
 local metal = Color3.fromRGB(75,83,104)
 local danger = Color3.fromRGB(255,75,70)
@@ -21,13 +22,13 @@ function Factory.create(parent, kind, surface, stage, station)
 	local direction=Vector3.new(definition.DirectionX,definition.DirectionY,definition.DirectionZ)
 	model:SetAttribute("Direction",if direction.Magnitude>0 then direction.Unit else Vector3.xAxis)
 	local base = surface
-	if kind == "press" then base *= CFrame.new(0,10,0)
+	if kind == "press" then base *= CFrame.new(0,Geometry.PressRestHeight,0)
 	elseif kind == "pendulum" then base *= CFrame.new(0,12,0)
 	elseif kind == "pusher" then base *= CFrame.new(-6,2,0)
 	elseif kind == "ring" then base *= CFrame.new(0,3.5,0)
-	elseif kind == "door" then base *= CFrame.new(0,3.2,0)
+	elseif kind == "door" then base *= CFrame.new(0,Geometry.DoorRestCenter,0)
 	elseif kind == "laser" then base *= CFrame.new(0,2,0)
-	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then base *= CFrame.new(0,1.6,0)
+	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then base *= CFrame.new(0,Geometry.SweepHeight,0)
 	end
 	model:SetAttribute("Base",base)
 	model.WorldPivot = base
@@ -56,22 +57,32 @@ function Factory.create(parent, kind, surface, stage, station)
 			U.label(model.Deck, "⇧ BELT ⇧",Color3.fromRGB(255,195,60))
 		end
 	elseif kind == "gear" then
-		local deck = piece("GearDeck",Vector3.new(0.9,7,7),CFrame.new(0,-0.45,0)*CFrame.Angles(0,0,math.pi/2),false,true,true)
+		local deck = piece("GearDeck",Vector3.new(0.9,Geometry.GearDiameter,Geometry.GearDiameter),CFrame.new(0,-0.45,0)*CFrame.Angles(0,0,math.pi/2),false,true,true)
 		deck.Shape = Enum.PartType.Cylinder
 		for n=0,11 do
 			local a=n*math.pi/6
-			piece("Tooth",Vector3.new(1,1,1.4),CFrame.new(math.cos(a)*3.8,-0.3,math.sin(a)*3.8)*CFrame.Angles(0,-a,0),true,false,false)
+			piece("Tooth",Vector3.new(0.7,0.65,0.9),CFrame.new(math.cos(a)*Geometry.GearToothRadius,-0.3,math.sin(a)*Geometry.GearToothRadius)*CFrame.Angles(0,-a,0),true,false,false)
 		end
-		piece("Sector",Vector3.new(1.5,0.08,5),CFrame.new(0,0.06,0),false,false,false).Color=Color3.fromRGB(60,230,170)
+		piece("Sector",Vector3.new(1.5,0.08,4),CFrame.new(0,0.06,0),false,false,false).Color=Color3.fromRGB(60,230,170)
 	elseif kind == "rotor" or kind == "doubleRotor" or kind == "blade" then
 		piece("Axle",Vector3.new(0.6,2,0.6),CFrame.new(0,-1,0),false,false,false)
-		piece("Sweep",Vector3.new(11,0.45,0.55),CFrame.new(),true,false,false)
-		if kind ~= "rotor" then
-			piece("CrossSweep",Vector3.new(0.55,0.45,11),CFrame.new(0,if kind=="doubleRotor" then 1.3 else 0,0),true,false,false)
+		if kind=="blade" then
+			-- Three short paddles; no lethal upper bar or reach into the waiting pad.
+			for index=0,2 do
+				local angle=index*math.pi*2/3
+				local offset=CFrame.new(math.cos(angle)*Geometry.BladeCenter,0,math.sin(angle)*Geometry.BladeCenter)*CFrame.Angles(0,-angle,0)
+				piece(if index==0 then "Sweep" elseif index==1 then "CrossSweep" else "ThirdSweep",
+					Vector3.new(Geometry.BladeLength,Geometry.SweepThickness,0.75),offset,true,false,false)
+			end
+		else
+			piece("Sweep",Vector3.new(Geometry.SweepLength,Geometry.SweepThickness,0.45),CFrame.new(),true,false,false)
+			if kind=="doubleRotor" then
+				piece("CrossSweep",Vector3.new(0.45,Geometry.SweepThickness,Geometry.SweepLength),CFrame.new(),true,false,false)
+			end
 		end
 	elseif kind == "pendulum" then
 		piece("Shaft",Vector3.new(0.35,9,0.35),CFrame.new(0,-4.5,0),false,false,false)
-		piece("Hammer",Vector3.new(if stage.Id>=34 then 5.5 else 4,2.5,3),CFrame.new(0,-9.5,0),true,false,false)
+		piece("Hammer",Vector3.new(if stage.Id>=34 then 4.2 else 3.5,2.2,2.5),CFrame.new(0,-9.5,0),true,false,false)
 	elseif kind == "press" then
 		piece("Piston",Vector3.new(1,5,1),CFrame.new(0,3,0),false,false,false)
 		piece("Crusher",Vector3.new(7,1.5,4),CFrame.new(),true,false,true)
@@ -79,7 +90,6 @@ function Factory.create(parent, kind, surface, stage, station)
 		piece("Ram",Vector3.new(1.2,3,3),CFrame.new(),true,false,true)
 	elseif kind == "laser" then
 		piece("Beam",Vector3.new(10,0.35,0.35),CFrame.new(),true,false,false)
-		piece("UpperBeam",Vector3.new(10,0.35,0.35),CFrame.new(0,2.5,0),true,false,false)
 	elseif kind == "ring" then
 		for n=0,9 do
 			local a=n*math.pi/6

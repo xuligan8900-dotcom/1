@@ -3,6 +3,7 @@
 from pathlib import Path
 import json
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,9 +12,14 @@ BUILD = ROOT / "build"
 
 
 def run(*args, capture=False):
-    return subprocess.run([str(a) for a in args], cwd=ROOT, check=True, text=True,
-                          stdout=subprocess.PIPE if capture else None,
-                          stderr=subprocess.PIPE if capture else None)
+    try:
+        return subprocess.run([str(a) for a in args], cwd=ROOT, check=True, text=True,
+                              stdout=subprocess.PIPE if capture else None,
+                              stderr=subprocess.PIPE if capture else None)
+    except subprocess.CalledProcessError as error:
+        if capture:
+            sys.stderr.write((error.stdout or "") + (error.stderr or ""))
+        raise SystemExit(error.returncode) from None
 
 
 def main():

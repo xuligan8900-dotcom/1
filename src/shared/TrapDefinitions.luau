@@ -1,9 +1,9 @@
 --!strict
 -- Period = safe + warning + active. Motion never uses random state.
 local definitions = {
-	move = {Motion="slide", Carry=true, Travel=2.5, Speed=0.65},
+	move = {Motion="slide", Carry=true, Travel=1.8, Speed=0.65},
 	lift = {Motion="lift", Carry=true, Travel=2.2, Speed=0.6},
-	orbit = {Motion="orbit", Carry=true, Travel=1.8, Speed=0.7},
+	orbit = {Motion="orbit", Carry=true, Travel=1.4, Speed=0.7},
 	rotor = {Motion="spin", Damage=100, Speed=0.7},
 	doubleRotor = {Motion="spin", Damage=100, Speed=0.8},
 	gear = {Motion="spin", Carry=true, Speed=0.6},

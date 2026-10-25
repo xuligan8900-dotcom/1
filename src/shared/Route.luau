@@ -18,22 +18,22 @@ local profiles = {
 function Route.point(stage, node, layout)
 	local profile = assert(profiles[layout], "Unknown layout")
 	local angle = ((stage - 1) * math.pi / 2) + node / 12 * math.pi / 2
-	local radius = 36 + profile[node + 1]
+	local radius = 42 + profile[node + 1]
 	return radius * math.cos(angle), 8 + (stage - 1) * 20 + node * 20 / 12, radius * math.sin(angle)
 end
 function Route.width(stage, node, layout)
-	if node % 4 == 0 then return 6 end
+	if node % 4 == 0 then return 5.2 end
 	if layout == "needles" then return 2.2 end
 	if layout == "beams" then return 2.6 end
 	if layout == "islands" then return 3.1 end
-	return math.max(2.8,4.8-stage*0.04)
+	return math.max(2.8,4.2-stage*0.03)
 end
 function Route.depth(stage,node)
-	if node%4==0 then return 5 end
-	return math.max(2.8,3.8-stage*0.02)
+	if node%4==0 then return 2.8 end
+	return math.max(2.5,3.0-stage*0.01)
 end
 function Route.carrierSize(stage)
-	return math.max(3.8,4.8-stage*0.02),math.max(3.2,3.8-stage*0.012)
+	return math.max(3.8,4.8-stage*0.02),math.max(2.8,3.3-stage*0.01)
 end
 function Route.validate(definitions)
 	assert(#definitions == 50, "Exactly 50 stages required")
@@ -49,7 +49,7 @@ function Route.validate(definitions)
 			local horizontal = math.sqrt((x-px)^2 + (z-pz)^2)
 			assert(horizontal <= 6.6, "Route exceeds conservative jump envelope")
 			assert(y > py and y-py < 2, "Invalid rise")
-			assert(math.abs(x) < 40 and math.abs(z) < 40, "Structural collision")
+			assert(math.abs(x) < 46 and math.abs(z) < 46, "Structural collision")
 		end
 		if i < 50 then
 			local x,y,z = Route.point(i,12,stage.Layout)

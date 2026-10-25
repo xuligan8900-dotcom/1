@@ -11,8 +11,16 @@ function Math.sample(mode,t,safe,warning,active,travel)
 	elseif mode=="pulse" or mode=="press" then amount=pulse*travel
 	elseif mode=="spin" or mode=="ring" then angle=t
 	elseif mode=="swing" then angle=math.sin(t)*0.68
-	elseif mode=="door" then amount=if state=="active" then 0 else travel end
-	local continuous=mode=="spin" or mode=="swing" or mode=="ring"
-	return amount,orbitZ,angle,state,continuous or state=="active"
+	elseif mode=="door" then
+		if state=="safe" then amount=travel
+		elseif state=="warning" then
+			local closing=(cycle-safe)/warning
+			amount=travel*(1-(closing*closing*(3-2*closing)))
+		else
+			local opening=math.clamp(((cycle-safe-warning)/active-0.55)/0.45,0,1)
+			amount=travel*(opening*opening*(3-2*opening))
+		end
+	end
+	return amount,orbitZ,angle,state,state=="active"
 end
 return table.freeze(Math)
