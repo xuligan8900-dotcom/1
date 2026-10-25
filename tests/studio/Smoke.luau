@@ -30,7 +30,20 @@ function Test.run(tower)
 		assert(CoinRules.validCoin(coin:GetAttribute("CoinId")),"Bad coin ID")
 		assert(coin.Anchored and not coin.CanCollide and not coin.CanTouch,"Coins affect physics")
 	end
+	local templates=game:GetService("ServerStorage").TowerClubTemplates
+	assert(#templates:GetChildren()==6,"Missing club models")
+	local clubIds={}
+	for _,tool in templates:GetChildren() do
+		assert(tool:IsA("Tool") and tool.RequiresHandle and not tool.CanBeDropped,"Bad club tool")
+		assert(tool:GetAttribute("TowerClub") and tool.Handle:IsA("BasePart"),"Club missing handle")
+		assert(not clubIds[tool:GetAttribute("ClubId")],"Duplicate club template")
+		clubIds[tool:GetAttribute("ClubId")]=true
+		for _,part in tool:GetChildren() do
+			if part:IsA("BasePart") then assert(not part.Anchored and part.Massless and not part.CanCollide and not part.CanQuery,"Club alters character collision/mass") end
+		end
+	end
 	local remotes=game:GetService("ReplicatedStorage").Remotes
+	assert(remotes.ClubAttack:IsA("RemoteEvent") and remotes.ClubSwing:IsA("RemoteEvent") and remotes.ClubHit:IsA("RemoteEvent"),"Club protocol missing")
 	assert(remotes.ShopGetState:IsA("RemoteFunction") and remotes.ShopRequest:IsA("RemoteEvent"),"Shop protocol missing")
 	assert(#tower.Checkpoints:GetChildren()==50)
 	assert(#tower.RouteGates:GetChildren()==100)

@@ -29,9 +29,28 @@
       </Properties>
       <Item class="ModuleScript" referent="3">
         <Properties>
+          <string name="Name">CombatRules</string>
+          <string name="Source"><![CDATA[--!strict
+local Rules={SpawnShield=4,CheckpointShield=2,HitImmunity=0.9,Stagger=0.25,MaxVertical=4.5}
+function Rules.canSwing(now,nextSwing,equipped,alive,safe,staggered)
+	return now>=nextSwing and equipped and alive and not safe and not staggered
+end
+function Rules.canHit(distance,vertical,dot,range,visible,attackerSafe,targetSafe,alive,immune)
+	return distance>0.05 and distance<=range and math.abs(vertical)<=Rules.MaxVertical
+		and dot>=0.35 and visible and not attackerSafe and not targetSafe and alive and not immune
+end
+function Rules.inBox(x,y,z,halfX,halfZ,minY,maxY)
+	return math.abs(x)<=halfX and math.abs(z)<=halfZ and y>=minY and y<=maxY
+end
+return table.freeze(Rules)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
           <string name="Name">CosmeticCatalog</string>
           <string name="Source"><![CDATA[--!strict
--- Cosmetic only: no item changes movement, collisions, health or checkpoints.
+-- Shared shop catalog. Cosmetic items and server-authoritative PvP clubs are separate categories.
 local items={
 	{Id="trail_none",Category="Trail",Name="Без следа",Price=0,Color={150,160,175}},
 	{Id="trail_cyan",Category="Trail",Name="Ионный след",Price=150,Color={65,220,255}},
@@ -45,14 +64,20 @@ local items={
 	{Id="title_engineer",Category="Title",Name="Инженер башни",Price=600,Color={255,180,70}},
 	{Id="title_master",Category="Title",Name="Покоритель башни",Price=0,RequiredWin=true,Color={150,245,255}},
 	{Id="title_supporter",Category="Title",Name="Поддержка проекта",Price=0,RequiredSupport=true,Color={255,150,220}},
+	{Id="club_wood",Category="Club",Name="Деревянная дубинка",Price=0,Color={160,110,65},Style="wood",Power=32,Lift=12,Range=6.5,Cooldown=1.2,Windup=0.16},
+	{Id="club_steel",Category="Club",Name="Стальная дубинка",Price=250,Color={155,175,195},Style="steel",Power=40,Lift=13,Range=6.8,Cooldown=1.35,Windup=0.18},
+	{Id="club_baton",Category="Club",Name="Неоновая дубинка",Price=600,Color={60,235,210},Style="neon",Power=32,Lift=12,Range=6.4,Cooldown=0.9,Windup=0.12},
+	{Id="club_hammer",Category="Club",Name="Механический молот",Price=1000,Color={255,170,55},Style="hammer",Power=52,Lift=15,Range=6.3,Cooldown=1.8,Windup=0.28},
+	{Id="club_plasma",Category="Club",Name="Плазменная дубинка",Price=0,RequiredPass="club_plasma",Color={210,85,255},Style="plasma",Power=43,Lift=13,Range=6.8,Cooldown=1.3,Windup=0.18},
+	{Id="club_cosmic",Category="Club",Name="Космическая дубинка",Price=0,RequiredPass="club_cosmic",Color={80,170,255},Style="cosmic",Power=37,Lift=15,Range=7.2,Cooldown=1.25,Windup=0.18},
 }
 local byId={}
 for _,item in items do byId[item.Id]=table.freeze(item) end
-return table.freeze({Items=items,ById=byId,Defaults={Trail="trail_none",Victory="fx_default",Title="title_rookie"}})
+return table.freeze({Items=items,ById=byId,Defaults={Trail="trail_none",Victory="fx_default",Title="title_rookie",Club="club_wood"}})
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="4">
+      <Item class="ModuleScript" referent="5">
         <Properties>
           <string name="Name">DataSchema</string>
           <string name="Source"><![CDATA[--!strict
@@ -79,7 +104,7 @@ return table.freeze(Schema)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="5">
+      <Item class="ModuleScript" referent="6">
         <Properties>
           <string name="Name">Difficulty</string>
           <string name="Source"><![CDATA[--!strict
@@ -110,7 +135,7 @@ return table.freeze(Difficulty)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="6">
+      <Item class="ModuleScript" referent="7">
         <Properties>
           <string name="Name">EconomyRules</string>
           <string name="Source"><![CDATA[--!strict
@@ -184,9 +209,17 @@ function Rules.apply(old,command,catalog)
 		state.Receipts[command.Id]=true
 		state.Supporter=true
 		state.Owned.title_supporter=true
+	elseif command.Kind=="pass" then
+		local item=catalog.ById[command.Id]
+		if not item or not item.RequiredPass or item.RequiredPass~=command.PassKey or command.Verified~=true then return state,"invalid" end
+		if state.Owned[item.Id] then return state,"duplicate" end
+		state.Owned[item.Id]=true
+		state.Supporter=true
+		state.Owned.title_supporter=true
 	elseif command.Kind=="buy" or command.Kind=="equip" then
 		local item=catalog.ById[command.Id]
 		if not item then return state,"invalid" end
+		if item.RequiredPass and not state.Owned[item.Id] then return state,"requires_pass" end
 		if item.RequiredWin and not state.WinRewarded then return state,"requires_win" end
 		if item.RequiredSupport and not state.Supporter then return state,"requires_support" end
 		if not state.Owned[item.Id] then
@@ -204,7 +237,7 @@ return table.freeze(Rules)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="7">
+      <Item class="ModuleScript" referent="8">
         <Properties>
           <string name="Name">GameConfig</string>
           <string name="Source"><![CDATA[--!strict
@@ -232,7 +265,7 @@ return table.freeze({
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="9">
         <Properties>
           <string name="Name">MotionMath</string>
           <string name="Source"><![CDATA[--!strict
@@ -264,7 +297,7 @@ return table.freeze(Math)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="10">
         <Properties>
           <string name="Name">Numeric</string>
           <string name="Source"><![CDATA[--!strict
@@ -277,7 +310,25 @@ return table.freeze(Numeric)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="11">
+        <Properties>
+          <string name="Name">PassProcessor</string>
+          <string name="Source"><![CDATA[--!strict
+-- A purchase-finished boolean alone is insufficient: ask Roblox for ownership.
+local Processor={}
+function Processor.process(pass,queryOwnership,grant)
+	local queried,owns=pcall(queryOwnership,pass.PassId)
+	if not queried then return false,"lookup_failed" end
+	if owns~=true then return false,"not_owned" end
+	local returned,committed,status=pcall(grant,{Kind="pass",Id=pass.ItemId,PassKey=pass.Key,Verified=true})
+	if returned and committed and (status=="ok" or status=="duplicate") then return true,status end
+	return false,"save_failed"
+end
+return table.freeze(Processor)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="12">
         <Properties>
           <string name="Name">ProgressRules</string>
           <string name="Source"><![CDATA[--!strict
@@ -315,7 +366,7 @@ return table.freeze(Rules)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="11">
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">ReceiptProcessor</string>
           <string name="Source"><![CDATA[--!strict
@@ -338,7 +389,7 @@ return table.freeze(Processor)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">RecoveryRules</string>
           <string name="Source"><![CDATA[--!strict
@@ -360,7 +411,7 @@ return table.freeze(Rules)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">Route</string>
           <string name="Source"><![CDATA[--!strict
@@ -428,7 +479,7 @@ return table.freeze(Route)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">StageDefinitions</string>
           <string name="Source"><![CDATA[--!strict
@@ -507,7 +558,7 @@ return table.freeze(definitions)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">TrapDefinitions</string>
           <string name="Source"><![CDATA[--!strict
@@ -549,7 +600,7 @@ return table.freeze(definitions)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">TrapGeometry</string>
           <string name="Source"><![CDATA[--!strict
@@ -572,7 +623,7 @@ return table.freeze({
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="17">
+      <Item class="ModuleScript" referent="19">
         <Properties>
           <string name="Name">TrapMotion</string>
           <string name="Source"><![CDATA[--!strict
@@ -618,7 +669,7 @@ return Motion
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">Traversal</string>
           <string name="Source"><![CDATA[--!strict
@@ -679,15 +730,15 @@ return table.freeze(Traversal)
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="19">
+  <Item class="ServerScriptService" referent="21">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="20">
+    <Item class="Folder" referent="22">
       <Properties>
         <string name="Name">TowerServer</string>
       </Properties>
-      <Item class="ModuleScript" referent="21">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">BuildUtil</string>
           <string name="Source"><![CDATA[--!strict
@@ -737,7 +788,7 @@ return Util
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="22">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">CheckpointService</string>
           <string name="Source"><![CDATA[--!strict
@@ -746,6 +797,7 @@ local Shared=game:GetService("ReplicatedStorage").Shared
 local Rules=require(Shared.ProgressRules)
 local Recovery=require(script.Parent.RecoveryService)
 local Economy=require(script.Parent.EconomyService)
+local Clubs=require(script.Parent.ClubService)
 local Service={}
 function Service.publish(player,p)
 	Recovery.update(player,p)
@@ -793,6 +845,7 @@ function Service.start(tower,data,remotes)
 			if touching and Rules.canCheckpoint(p,stage) then
 				Rules.advance(p,stage,os.clock())
 				player.RespawnLocation=checkpoint
+				Clubs.protect(player,2)
 				if p.Won then
 					p.FinishTime=workspace:GetServerTimeNow()-p.StartedAt
 					if p.FullRun then p.BestTime=math.min(p.BestTime or math.huge,p.FinishTime) end
@@ -818,7 +871,223 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="23">
+      <Item class="ModuleScript" referent="25">
+        <Properties>
+          <string name="Name">ClubService</string>
+          <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local Shared=game:GetService("ReplicatedStorage").Shared
+local Catalog=require(Shared.CosmeticCatalog)
+local Rules=require(Shared.CombatRules)
+local Service={States={},Staggers={},Economy=nil,Data=nil,Tower=nil,Remotes=nil,Templates={}}
+local function state(player)
+	local s=Service.States[player]
+	if not s then s={NextSwing=0,LastRequest=-10,ShieldUntil=0,ImmuneUntil=0}; Service.States[player]=s end
+	return s
+end
+function Service.protect(player,seconds)
+	state(player).ShieldUntil=os.clock()+seconds
+	player:SetAttribute("ClubShieldUntil",workspace:GetServerTimeNow()+seconds)
+end
+local function body(player)
+	local character=player.Character
+	local root=character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+	return character,root,humanoid
+end
+function Service.safe(player,root)
+	local s=state(player)
+	if os.clock()<s.ShieldUntil then return true end
+	local p=Service.Data and Service.Data.Profiles[player]
+	if not p or p.Won then return true end
+	local lobby=Service.Tower.Foundation.LobbySpawn.CFrame:PointToObjectSpace(root.Position)
+	if Rules.inBox(lobby.X,lobby.Y,lobby.Z,10,12,-2,9) then return true end
+	local nearest=math.floor((root.Position.Y-8)/20)
+	for n=math.max(1,nearest-1),math.min(50,nearest+1) do
+		local cp=Service.Tower.Checkpoints:FindFirstChild("Checkpoint_"..n)
+		local q=cp.CFrame:PointToObjectSpace(root.Position)
+		if Rules.inBox(q.X,q.Y,q.Z,cp.Size.X/2+1.1,cp.Size.Z/2+1.1,-1,7) then return true end
+	end
+	for _,floor in Service.Tower.RecoveryFloors:GetChildren() do
+		if p.RunStage>=floor:GetAttribute("UnlockStage") then
+			local q=root.Position-floor.CatchDeck.Position
+			if Rules.inBox(q.X,q.Y,q.Z,54,54,0.6,7.6) then return true end
+		end
+	end
+	return false
+end
+local function part(tool,name,size,offset,color,material,handle)
+	local p=Instance.new("Part")
+	p.Name=name; p.Size=size; p.CFrame=offset
+	p.Color=color; p.Material=material
+	p.CanCollide=false; p.CanTouch=false; p.CanQuery=false; p.Massless=true
+	p.Parent=tool
+	if handle then
+		local weld=Instance.new("WeldConstraint")
+		weld.Part0=handle; weld.Part1=p; weld.Parent=p
+	end
+	return p
+end
+local function makeTool(item)
+	local tool=Instance.new("Tool")
+	tool.Name=item.Name
+	tool.ToolTip="Клик / F / кнопка Удар — оттолкнуть игрока"
+	tool.RequiresHandle=true; tool.CanBeDropped=false
+	tool.Grip=CFrame.new(0,-0.65,0)*CFrame.Angles(math.rad(-15),0,0)
+	tool:SetAttribute("TowerClub",true); tool:SetAttribute("ClubId",item.Id)
+	local color=Color3.fromRGB(item.Color[1],item.Color[2],item.Color[3])
+	local handle=part(tool,"Handle",Vector3.new(0.35,2.8,0.35),CFrame.identity,Color3.fromRGB(80,68,58),Enum.Material.Wood)
+	local material=if item.Style=="wood" then Enum.Material.Wood elseif item.Style=="steel" or item.Style=="hammer" then Enum.Material.Metal else Enum.Material.Neon
+	local head=part(tool,"Head",if item.Style=="hammer" then Vector3.new(1.8,0.9,0.9) else Vector3.new(0.75,1.5,0.75),CFrame.new(0,1.3,0),color,material,handle)
+	if item.Style=="plasma" then head.Shape=Enum.PartType.Ball end
+	if item.Style=="cosmic" then
+		head.Shape=Enum.PartType.Ball
+		for _,x in {-0.65,0.65} do
+			local orb=part(tool,"OrbitOrb",Vector3.new(0.4,0.4,0.4),CFrame.new(x,1.4,0),color,Enum.Material.Neon,handle)
+			orb.Shape=Enum.PartType.Ball
+		end
+	end
+	for _,y in {0.7,1.85} do part(tool,"Band",Vector3.new(0.82,0.12,0.82),CFrame.new(0,y,0),color,material,handle) end
+	return tool
+end
+function Service.sync(player,forceEquip)
+	if not Service.Economy then return end
+	local p=Service.Economy.Profiles[player]
+	local character,_,humanoid=body(player)
+	local backpack=player:FindFirstChildOfClass("Backpack")
+	if not p or not backpack then return end
+	local id=p.Wallet.Equipped.Club
+	local item=Catalog.ById[id]
+	if not item or item.Category~="Club" or not p.Wallet.Owned[id] then return end
+	local existing=nil
+	for _,container in {backpack,character} do
+		if not container then continue end
+		for _,tool in container:GetChildren() do
+			if tool:IsA("Tool") and tool:GetAttribute("TowerClub") then
+				if tool:GetAttribute("ClubId")==id and not existing then existing=tool else tool:Destroy() end
+			end
+		end
+	end
+	if not existing then existing=Service.Templates[id]:Clone(); existing.Parent=backpack; forceEquip=true end
+	if forceEquip and humanoid and humanoid.Health>0 then humanoid:EquipTool(existing) end
+end
+local function equipped(player)
+	local p=Service.Economy.Profiles[player]
+	local character,root,humanoid=body(player)
+	if not p or not character or not root or not humanoid or humanoid.Health<=0 then return nil end
+	for _,tool in character:GetChildren() do
+		if tool:IsA("Tool") and tool:GetAttribute("TowerClub") then
+			local id=tool:GetAttribute("ClubId")
+			local item=Catalog.ById[id]
+			if item and item.Category=="Club" and p.Wallet.Owned[id] and p.Wallet.Equipped.Club==id then return tool,item,root,humanoid end
+		end
+	end
+	return nil
+end
+function Service.request(player)
+	local s=state(player)
+	local now=os.clock()
+	if now-s.LastRequest<0.1 then return end
+	s.LastRequest=now
+	local tool,item,root,humanoid=equipped(player)
+	if not tool then return end
+	if not Rules.canSwing(now,s.NextSwing,true,humanoid.Health>0,Service.safe(player,root),humanoid.PlatformStand) then return end
+	s.NextSwing=now+item.Cooldown
+	s.Pending={At=now+item.Windup,Tool=tool,Character=player.Character}
+	player:SetAttribute("ClubCooldownUntil",workspace:GetServerTimeNow()+item.Cooldown)
+	Service.Remotes.ClubSwing:FireAllClients(player.UserId,item.Id)
+end
+local function resolve(player,pending)
+	local tool,item,root,attackerHumanoid=equipped(player)
+	if not tool or attackerHumanoid.PlatformStand or tool~=pending.Tool or player.Character~=pending.Character or Service.safe(player,root) then return end
+	local forward=Vector3.new(root.CFrame.LookVector.X,0,root.CFrame.LookVector.Z)
+	if forward.Magnitude<0.01 then return end
+	forward=forward.Unit
+	local best,bestRoot,bestHumanoid,bestDistance=nil,nil,nil,math.huge
+	for _,target in Players:GetPlayers() do
+		if target==player then continue end
+		local character,targetRoot,humanoid=body(target)
+		if not targetRoot or not humanoid or humanoid.Health<=0 or targetRoot.Anchored then continue end
+		local delta=targetRoot.Position-root.Position
+		local horizontal=Vector3.new(delta.X,0,delta.Z)
+		if horizontal.Magnitude<0.05 then continue end
+		local distance=delta.Magnitude
+		if distance>item.Range or distance>=bestDistance then continue end
+		local safe=Service.safe(target,targetRoot)
+		local params=RaycastParams.new()
+		params.FilterType=Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances={player.Character,character}
+		params.RespectCanCollide=true
+		params.CollisionGroup=root.CollisionGroup
+		local visible=workspace:Raycast(root.Position+Vector3.new(0,0.5,0),delta,params)==nil
+		if Rules.canHit(distance,delta.Y,forward:Dot(horizontal.Unit),item.Range,visible,false,safe,true,os.clock()<state(target).ImmuneUntil) then
+			best,bestRoot,bestHumanoid,bestDistance=target,targetRoot,humanoid,distance
+		end
+	end
+	if not best then return end
+	local direction=Vector3.new(bestRoot.Position.X-root.Position.X,0,bestRoot.Position.Z-root.Position.Z).Unit
+	local old=bestRoot.AssemblyLinearVelocity
+	local desired=direction*item.Power+Vector3.new(0,math.max(old.Y,item.Lift),0)
+	local previous=bestHumanoid.PlatformStand
+	pcall(function() bestRoot:SetNetworkOwner(nil) end)
+	bestHumanoid.PlatformStand=true
+	bestRoot:ApplyImpulse((desired-old)*bestRoot.AssemblyMass)
+	bestRoot:SetAttribute("ClubKnockbackUntil",workspace:GetServerTimeNow()+Rules.Stagger+0.1)
+	state(best).ImmuneUntil=os.clock()+Rules.HitImmunity
+	table.insert(Service.Staggers,{Root=bestRoot,Humanoid=bestHumanoid,Until=os.clock()+Rules.Stagger,Previous=previous})
+	Service.Remotes.ClubHit:FireAllClients(player.UserId,best.UserId,bestRoot.Position,item.Id)
+end
+function Service.remove(player) Service.States[player]=nil end
+function Service.start(tower,remotes,economy,data)
+	Service.Tower=tower; Service.Remotes=remotes; Service.Economy=economy; Service.Data=data
+	economy.Clubs=Service
+	local templates=Instance.new("Folder")
+	templates.Name="TowerClubTemplates"; templates.Parent=game:GetService("ServerStorage")
+	for _,item in Catalog.Items do
+		if item.Category=="Club" then
+			local tool=makeTool(item); tool.Parent=templates
+			Service.Templates[item.Id]=tool
+		end
+	end
+	remotes.ClubAttack.OnServerEvent:Connect(function(player) Service.request(player) end)
+	local elapsed=0
+	local connection
+	connection=RunService.Heartbeat:Connect(function(dt)
+		if not tower.Parent then connection:Disconnect(); return end
+		local now=os.clock()
+		for player,s in Service.States do
+			if s.Pending and s.Pending.At<=now then
+				local pending=s.Pending; s.Pending=nil
+				if player.Parent then resolve(player,pending) end
+			end
+		end
+		for i=#Service.Staggers,1,-1 do
+			local entry=Service.Staggers[i]
+			if now>=entry.Until then
+				if entry.Humanoid.Parent and entry.Humanoid.Health>0 then
+					entry.Humanoid.PlatformStand=entry.Previous
+					if not entry.Previous then entry.Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end
+				end
+				if entry.Root.Parent then pcall(function() entry.Root:SetNetworkOwnershipAuto() end) end
+				table.remove(Service.Staggers,i)
+			end
+		end
+		elapsed+=dt
+		if elapsed>=0.2 then
+			elapsed=0
+			for _,player in Players:GetPlayers() do
+				local _,root=body(player)
+				if root then player:SetAttribute("ClubSafe",Service.safe(player,root)) end
+			end
+		end
+	end)
+end
+return Service
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="26">
         <Properties>
           <string name="Name">CoinService</string>
           <string name="Source"><![CDATA[--!strict
@@ -879,7 +1148,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="24">
+      <Item class="ModuleScript" referent="27">
         <Properties>
           <string name="Name">CommerceConfig</string>
           <string name="Source"><![CDATA[--!strict
@@ -893,11 +1162,16 @@ return table.freeze({
 		{Key="coins_medium",Name="1000 монет",Coins=1000,ProductId=0},
 		{Key="coins_large",Name="3000 монет",Coins=3000,ProductId=0},
 	},
+	-- Permanent club ownership uses Game Passes, not repeatable coin products.
+	GamePasses={
+		{Key="club_plasma",Name="Плазменная дубинка навсегда",ItemId="club_plasma",PassId=0},
+		{Key="club_cosmic",Name="Космическая дубинка навсегда",ItemId="club_cosmic",PassId=0},
+	},
 })
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="25">
+      <Item class="ModuleScript" referent="28">
         <Properties>
           <string name="Name">CosmeticService</string>
           <string name="Source"><![CDATA[--!strict
@@ -956,7 +1230,7 @@ return Cosmetic
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="26">
+      <Item class="ModuleScript" referent="29">
         <Properties>
           <string name="Name">EconomyService</string>
           <string name="Source"><![CDATA[--!strict
@@ -969,18 +1243,25 @@ local Config=require(Shared.GameConfig)
 local Catalog=require(Shared.CosmeticCatalog)
 local Rules=require(Shared.EconomyRules)
 local Receipts=require(Shared.ReceiptProcessor)
+local Passes=require(Shared.PassProcessor)
 local Commerce=require(script.Parent.CommerceConfig)
 local Cosmetics=require(script.Parent.CosmeticService)
 local persistent=not RunService:IsStudio() or Config.StudioPersistence
 local store=if persistent then DataStoreService:GetDataStore(Commerce.DataStoreName) else nil
 local Economy={Profiles={},Products={},Remotes=nil}
 local byProduct={}
+local byPass={}
 for _,product in Commerce.Products do
 	assert(product.ProductId>=0 and product.ProductId%1==0 and product.Coins>0 and product.Coins%1==0 and product.Coins<=Rules.MaxPack)
 	if product.ProductId>0 then
 		assert(not byProduct[product.ProductId],"Developer Product IDs must be unique")
 		byProduct[product.ProductId]=product
 	end
+end
+for _,pass in Commerce.GamePasses do
+	local item=Catalog.ById[pass.ItemId]
+	assert(pass.PassId>=0 and pass.PassId%1==0 and item and item.RequiredPass==pass.Key,"Invalid club Game Pass")
+	if pass.PassId>0 then assert(not byPass[pass.PassId],"Duplicate Game Pass ID"); byPass[pass.PassId]=pass end
 end
 local function retry(operation)
 	local message
@@ -1007,9 +1288,11 @@ function Economy.publish(player)
 	player:SetAttribute("CosmeticTrail",p.Wallet.Equipped.Trail)
 	player:SetAttribute("CosmeticVictory",p.Wallet.Equipped.Victory)
 	player:SetAttribute("CosmeticTitle",p.Wallet.Equipped.Title)
+	player:SetAttribute("EquippedClub",p.Wallet.Equipped.Club)
 	Economy.Remotes.ShopStateChanged:FireClient(player,Economy.public(player))
 	local signature=p.Wallet.Equipped.Trail..p.Wallet.Equipped.Title
 	if signature~=p.Appearance then Cosmetics.apply(player,p.Wallet); p.Appearance=signature end
+	if Economy.Clubs then Economy.Clubs.sync(player) end
 end
 function Economy.load(player)
 	local saved=nil
@@ -1073,13 +1356,40 @@ function Economy.character(player,character)
 	if not p then return end
 	if character:WaitForChild("Head",15) and character:WaitForChild("HumanoidRootPart",15) and player.Character==character then
 		Cosmetics.apply(player,p.Wallet)
+		if Economy.Clubs then player:WaitForChild("Backpack",10); Economy.Clubs.sync(player,true) end
 	end
+end
+function Economy.refreshPasses(player,force)
+	local p=Economy.Profiles[player]
+	if not p or RunService:IsStudio() or not store then return end
+	if p.PassCheckRunning then
+		if not force then return end
+		local deadline=os.clock()+10
+		while p.PassCheckRunning and os.clock()<deadline do task.wait(0.1) end
+		if p.PassCheckRunning then return end
+	end
+	if not force and os.clock()-(p.LastPassCheck or -100)<15 then return end
+	p.LastPassCheck=os.clock(); p.PassCheckRunning=true
+	for passId,pass in byPass do
+		if not p.Wallet.Owned[pass.ItemId] then
+			local granted,result=Passes.process(pass,function(id)
+				local ok,owns=retry(function() return MarketplaceService:UserOwnsGamePassAsync(player.UserId,id) end)
+				if not ok then error(tostring(owns)) end
+				return owns
+			end,function(command)
+				if Economy.Profiles[player]~=p then return false,"not_loaded" end
+				return Economy.change(player,command)
+			end)
+			if not granted and result~="not_owned" then warn("[Commerce] Game Pass verification pending: "..passId.." ("..result..")") end
+		end
+	end
+	p.PassCheckRunning=false
 end
 function Economy.remove(player)
 	-- All balance/inventory changes are already durable UpdateAsync transactions.
 	Economy.Profiles[player]=nil
 end
-local notices={not_enough_coins="Недостаточно монет",requires_win="Сначала покорите 50-й этап",requires_support="Титул выдаётся за поддержку проекта",not_owned="Сначала купите предмет",save_failed="Не удалось сохранить. Попробуйте ещё раз",busy="Покупка обрабатывается"}
+local notices={requires_pass="Эта дубинка открывается покупкой Game Pass",not_enough_coins="Недостаточно монет",requires_win="Сначала покорите 50-й этап",requires_support="Титул выдаётся за поддержку проекта",not_owned="Сначала купите предмет",save_failed="Не удалось сохранить. Попробуйте ещё раз",busy="Покупка обрабатывается"}
 function Economy.start(remotes)
 	Economy.Remotes=remotes
 	local context={Products=byProduct,Durable=store~=nil,
@@ -1094,7 +1404,7 @@ function Economy.start(remotes)
 		end
 		return Enum.ProductPurchaseDecision[decision]
 	end
-	remotes.ShopGetState.OnServerInvoke=function(player) return Economy.public(player) end
+	remotes.ShopGetState.OnServerInvoke=function(player) task.spawn(Economy.refreshPasses,player,false); return Economy.public(player) end
 	remotes.ShopRequest.OnServerEvent:Connect(function(player,action,id)
 		local p=Economy.Profiles[player]
 		if not p or type(action)~="string" or type(id)~="string" or #id>64 or os.clock()-p.LastRequest<0.6 then return end
@@ -1102,7 +1412,11 @@ function Economy.start(remotes)
 		if action=="donate" then
 			for _,product in Economy.Products do
 				if product.Key==id and product.Enabled then
-					local ok=pcall(function() MarketplaceService:PromptProductPurchase(player,product.ProductId) end)
+					if product.ItemId and p.Wallet.Owned[product.ItemId] then remotes.ShopNotice:FireClient(player,"Дубинка уже есть в коллекции"); return end
+					local ok=pcall(function()
+						if product.Type=="Pass" then MarketplaceService:PromptGamePassPurchase(player,product.PassId)
+						else MarketplaceService:PromptProductPurchase(player,product.ProductId) end
+					end)
 					if not ok then remotes.ShopNotice:FireClient(player,"Покупка сейчас недоступна") end
 					return
 				end
@@ -1116,16 +1430,32 @@ function Economy.start(remotes)
 	end)
 	-- Zero IDs stay visible but disabled. No invented prices or fake successful sales.
 	for _,product in Commerce.Products do
-		table.insert(Economy.Products,{Key=product.Key,Name=product.Name,Coins=product.Coins,ProductId=product.ProductId,Enabled=false})
+		table.insert(Economy.Products,{Key=product.Key,Name=product.Name,Coins=product.Coins,ProductId=product.ProductId,Type="Product",Enabled=false})
 	end
+	for _,pass in Commerce.GamePasses do
+		table.insert(Economy.Products,{Key=pass.Key,Name=pass.Name,ItemId=pass.ItemId,PassId=pass.PassId,Type="Pass",Enabled=false})
+	end
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player,passId,purchased)
+		local pass=byPass[passId]
+		if not purchased or not pass then return end
+		task.spawn(function()
+			Economy.refreshPasses(player,true)
+			local p=Economy.Profiles[player]
+			if p and player.Parent then
+				remotes.ShopNotice:FireClient(player,if p.Wallet.Owned[pass.ItemId] then "Дубинка добавлена в коллекцию" else "Выдача задерживается. Откройте магазин чуть позже.")
+			end
+		end)
+	end)
 	task.spawn(function()
 		for _,product in Economy.Products do
-			if product.ProductId>0 and not RunService:IsStudio() and game.GameId>0 then
-				local ok,info=pcall(function() return MarketplaceService:GetProductInfoAsync(product.ProductId,Enum.InfoType.Product) end)
+			local id=if product.Type=="Pass" then product.PassId else product.ProductId
+			if id>0 and not RunService:IsStudio() and game.GameId>0 then
+				local infoType=if product.Type=="Pass" then Enum.InfoType.GamePass else Enum.InfoType.Product
+				local ok,info=pcall(function() return MarketplaceService:GetProductInfoAsync(id,infoType) end)
 				if ok and type(info)=="table" and type(info.PriceInRobux)=="number" and info.IsForSale~=false then
 					product.Price=info.PriceInRobux
 					product.Enabled=true
-				else warn("[Commerce] Product metadata unavailable: "..product.ProductId) end
+				else warn("[Commerce] Offer metadata unavailable: "..id) end
 			end
 		end
 		for player in Economy.Profiles do Economy.publish(player) end
@@ -1135,14 +1465,14 @@ return Economy
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Script" referent="27">
+      <Item class="Script" referent="30">
         <Properties>
           <string name="Name">GameBootstrap</string>
           <token name="RunContext">0</token>
           <string name="Source"><![CDATA[--!strict
 local Players=game:GetService("Players")
 Players.CharacterAutoLoads=false
-workspace:SetAttribute("TowerVersion","5.0")
+workspace:SetAttribute("TowerVersion","6.0")
 workspace:SetAttribute("TowerBootStatus","starting")
 workspace:SetAttribute("TowerBootError",nil)
 workspace:SetAttribute("TowerDiagnosticsPassed",nil)
@@ -1154,12 +1484,13 @@ local function start()
 	local Data=require(script.Parent.PlayerDataService)
 	local Economy=require(script.Parent.EconomyService)
 	local Coins=require(script.Parent.CoinService)
+	local Clubs=require(script.Parent.ClubService)
 	local Checkpoints=require(script.Parent.CheckpointService)
 	local Respawn=require(script.Parent.RespawnService)
 	local Rules=require(ReplicatedStorage.Shared.ProgressRules)
 	local remotes=Instance.new("Folder")
 	remotes.Name="Remotes"
-	for _,name in {"CheckpointNotification","VictoryEvent","PlayAgain","ShopRequest","ShopStateChanged","ShopNotice","CosmeticVictory"} do
+	for _,name in {"CheckpointNotification","VictoryEvent","PlayAgain","ShopRequest","ShopStateChanged","ShopNotice","CosmeticVictory","ClubAttack","ClubSwing","ClubHit"} do
 		local event=Instance.new("RemoteEvent")
 		event.Name=name
 		event.Parent=remotes
@@ -1172,6 +1503,7 @@ local function start()
 	local tower=Generator.generate()
 	workspace:SetAttribute("TowerBootStatus","services")
 	Economy.start(remotes)
+	Clubs.start(tower,remotes,Economy,Data)
 	Coins.start(tower,Economy,Data)
 	Traps.start(tower)
 	Checkpoints.start(tower,Data,remotes)
@@ -1184,6 +1516,7 @@ local function start()
 		local p=Data.load(player)
 		if not p then joining[player]=nil; return end
 		if not Economy.load(player) then joining[player]=nil; return end
+		task.spawn(Economy.refreshPasses,player,false)
 		task.spawn(function()
 			Economy.stage(player,p.MaxStage)
 			if p.Completed then Economy.change(player,{Kind="win"}) end
@@ -1201,6 +1534,7 @@ local function start()
 		Data.save(player,os.clock()+15)
 		Data.Profiles[player]=nil
 		Economy.remove(player)
+		Clubs.remove(player)
 		joining[player]=nil
 	end)
 	for _,player in Players:GetPlayers() do task.spawn(join,player) end
@@ -1209,6 +1543,7 @@ local function start()
 		if not p or p.Spawning or not Rules.replay(p,workspace:GetServerTimeNow(),os.clock()) then return end
 		Checkpoints.publish(player,p)
 		player.RespawnLocation=tower.Foundation.LobbySpawn
+		Clubs.protect(player,4)
 		local character=player.Character
 		local humanoid=character and character:FindFirstChildOfClass("Humanoid")
 		if character and humanoid and humanoid.Health>0 then
@@ -1244,7 +1579,7 @@ end
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="28">
+      <Item class="ModuleScript" referent="31">
         <Properties>
           <string name="Name">PlayerDataService</string>
           <string name="Source"><![CDATA[--!strict
@@ -1348,7 +1683,7 @@ return Data
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="29">
+      <Item class="ModuleScript" referent="32">
         <Properties>
           <string name="Name">RecoveryService</string>
           <string name="Source"><![CDATA[--!strict
@@ -1428,7 +1763,7 @@ return Recovery
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="30">
+      <Item class="ModuleScript" referent="33">
         <Properties>
           <string name="Name">RespawnService</string>
           <string name="Source"><![CDATA[--!strict
@@ -1436,6 +1771,7 @@ local Players=game:GetService("Players")
 local Config=require(game:GetService("ReplicatedStorage").Shared.GameConfig)
 local Recovery=require(script.Parent.RecoveryService)
 local Economy=require(script.Parent.EconomyService)
+local Clubs=require(script.Parent.ClubService)
 local Respawn={}
 function Respawn.destination(tower,stage)
 	if stage==0 then return CFrame.new(42,12,0) end
@@ -1447,6 +1783,7 @@ function Respawn.spawn(player,profile,tower)
 	player.RespawnLocation=if profile.RunStage==0 then tower.Foundation.LobbySpawn else tower.Checkpoints:FindFirstChild("Checkpoint_"..profile.RunStage)
 	local ok,err=pcall(function() player:LoadCharacterAsync() end)
 	profile.Spawning=false
+	if ok and player.Parent then Clubs.sync(player,true) end
 	if not ok and player.Parent then
 		warn("[Respawn] "..tostring(err))
 		task.delay(3,function() if player.Parent then Respawn.spawn(player,profile,tower) end end)
@@ -1466,6 +1803,7 @@ function Respawn.bind(player,profile,tower,publish)
 		root.AssemblyLinearVelocity=Vector3.zero
 		root.AssemblyAngularVelocity=Vector3.zero
 		root.CFrame=Respawn.destination(tower,profile.RunStage)
+		Clubs.protect(player,4)
 		humanoid.Died:Once(function()
 			profile.Deaths+=1
 			publish(player,profile)
@@ -1481,7 +1819,7 @@ return Respawn
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="31">
+      <Item class="ModuleScript" referent="34">
         <Properties>
           <string name="Name">StageBuilder</string>
           <string name="Source"><![CDATA[--!strict
@@ -1576,7 +1914,7 @@ return Builder
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="32">
+      <Item class="ModuleScript" referent="35">
         <Properties>
           <string name="Name">TowerGenerator</string>
           <string name="Source"><![CDATA[--!strict
@@ -1693,7 +2031,7 @@ return Generator
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="33">
+      <Item class="ModuleScript" referent="36">
         <Properties>
           <string name="Name">TrapController</string>
           <string name="Source"><![CDATA[--!strict
@@ -1777,7 +2115,7 @@ return Controller
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="34">
+      <Item class="ModuleScript" referent="37">
         <Properties>
           <string name="Name">TrapFactory</string>
           <string name="Source"><![CDATA[--!strict
@@ -1906,7 +2244,7 @@ return Factory
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="35">
+      <Item class="ModuleScript" referent="38">
         <Properties>
           <string name="Name">TraversalBuilder</string>
           <string name="Source"><![CDATA[--!strict
@@ -1976,15 +2314,15 @@ return Builder
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="36">
+  <Item class="ServerStorage" referent="39">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
-    <Item class="Folder" referent="37">
+    <Item class="Folder" referent="40">
       <Properties>
         <string name="Name">TowerTests</string>
       </Properties>
-      <Item class="ModuleScript" referent="38">
+      <Item class="ModuleScript" referent="41">
         <Properties>
           <string name="Name">Smoke</string>
           <string name="Source"><![CDATA[--!strict
@@ -2019,7 +2357,20 @@ function Test.run(tower)
 		assert(CoinRules.validCoin(coin:GetAttribute("CoinId")),"Bad coin ID")
 		assert(coin.Anchored and not coin.CanCollide and not coin.CanTouch,"Coins affect physics")
 	end
+	local templates=game:GetService("ServerStorage").TowerClubTemplates
+	assert(#templates:GetChildren()==6,"Missing club models")
+	local clubIds={}
+	for _,tool in templates:GetChildren() do
+		assert(tool:IsA("Tool") and tool.RequiresHandle and not tool.CanBeDropped,"Bad club tool")
+		assert(tool:GetAttribute("TowerClub") and tool.Handle:IsA("BasePart"),"Club missing handle")
+		assert(not clubIds[tool:GetAttribute("ClubId")],"Duplicate club template")
+		clubIds[tool:GetAttribute("ClubId")]=true
+		for _,part in tool:GetChildren() do
+			if part:IsA("BasePart") then assert(not part.Anchored and part.Massless and not part.CanCollide and not part.CanQuery,"Club alters character collision/mass") end
+		end
+	end
 	local remotes=game:GetService("ReplicatedStorage").Remotes
+	assert(remotes.ClubAttack:IsA("RemoteEvent") and remotes.ClubSwing:IsA("RemoteEvent") and remotes.ClubHit:IsA("RemoteEvent"),"Club protocol missing")
 	assert(remotes.ShopGetState:IsA("RemoteFunction") and remotes.ShopRequest:IsA("RemoteEvent"),"Shop protocol missing")
 	assert(#tower.Checkpoints:GetChildren()==50)
 	assert(#tower.RouteGates:GetChildren()==100)
@@ -2096,7 +2447,7 @@ return Test
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="39">
+  <Item class="StarterPlayer" referent="42">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <token name="CameraMode">0</token>
@@ -2104,15 +2455,142 @@ return Test
       <bool name="CharacterUseJumpPower">true</bool>
       <float name="CharacterWalkSpeed">16</float>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="40">
+    <Item class="StarterPlayerScripts" referent="43">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="41">
+      <Item class="Folder" referent="44">
         <Properties>
           <string name="Name">TowerClient</string>
         </Properties>
-        <Item class="LocalScript" referent="42">
+        <Item class="LocalScript" referent="45">
+          <Properties>
+            <string name="Name">ClubController</string>
+            <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local ContextActionService=game:GetService("ContextActionService")
+local TweenService=game:GetService("TweenService")
+local RunService=game:GetService("RunService")
+local Debris=game:GetService("Debris")
+local SoundService=game:GetService("SoundService")
+local player=Players.LocalPlayer
+local Catalog=require(ReplicatedStorage:WaitForChild("Shared").CosmeticCatalog)
+local remotes=ReplicatedStorage:WaitForChild("Remotes")
+local current=nil
+local activated=nil
+local characterConnections={}
+local gui=Instance.new("ScreenGui")
+gui.Name="ClubStatus"; gui.ResetOnSpawn=false; gui.Parent=player:WaitForChild("PlayerGui")
+local status=Instance.new("TextLabel")
+status.AnchorPoint=Vector2.new(0.5,0.5)
+status.Position=UDim2.fromScale(0.5,0.78)
+status.Size=UDim2.new(0.75,0,0,38)
+status.BackgroundTransparency=1
+status.TextColor3=Color3.fromRGB(235,245,255)
+status.TextStrokeTransparency=0.3
+status.Font=Enum.Font.GothamBold
+status.TextSize=14
+status.TextWrapped=true
+status.Visible=false
+status.Parent=gui
+local function refresh()
+	local nextTool=nil
+	local character=player.Character
+	if character then
+		for _,child in character:GetChildren() do
+			if child:IsA("Tool") and child:GetAttribute("TowerClub") then nextTool=child; break end
+		end
+	end
+	if nextTool==current then return end
+	if activated then activated:Disconnect(); activated=nil end
+	ContextActionService:UnbindAction("TowerClubAttack")
+	current=nextTool
+	status.Visible=current~=nil
+	if not current then return end
+	activated=current.Activated:Connect(function()
+		if current and current.Parent==player.Character then remotes.ClubAttack:FireServer() end
+	end)
+	ContextActionService:BindAction("TowerClubAttack",function(_,inputState)
+		if inputState==Enum.UserInputState.Begin and current then current:Activate() end
+		return Enum.ContextActionResult.Sink
+	end,true,Enum.KeyCode.F,Enum.KeyCode.ButtonR2)
+	ContextActionService:SetTitle("TowerClubAttack","Удар")
+	ContextActionService:SetPosition("TowerClubAttack",UDim2.fromScale(0.77,0.55))
+end
+local function bind(character)
+	for _,connection in characterConnections do connection:Disconnect() end
+	characterConnections={character.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then table.insert(characterConnections,child:GetAttributeChangedSignal("TowerClub"):Connect(refresh)) end
+		refresh()
+	end),character.ChildRemoved:Connect(refresh)}
+	refresh()
+end
+player.CharacterAdded:Connect(bind)
+if player.Character then bind(player.Character) end
+local elapsed=0
+RunService.RenderStepped:Connect(function(dt)
+	elapsed+=dt
+	if elapsed<0.1 then return end
+	elapsed=0
+	if not current then return end
+	local now=workspace:GetServerTimeNow()
+	local shield=player:GetAttribute("ClubShieldUntil") or 0
+	local cooldown=player:GetAttribute("ClubCooldownUntil") or 0
+	if now<shield then status.Text="ЗАЩИТА · "..string.format("%.1f",shield-now).."с"
+	elseif player:GetAttribute("ClubSafe") then status.Text="БЕЗОПАСНАЯ ЗОНА · УДАРЫ ОТКЛЮЧЕНЫ"
+	elseif cooldown>now then status.Text=string.format("ПЕРЕЗАРЯДКА · %.1fс",cooldown-now)
+	else status.Text="КЛИК / F / УДАР · ОТТОЛКНУТЬ ИГРОКА" end
+end)
+remotes.ClubSwing.OnClientEvent:Connect(function(userId,id)
+	local attacker=Players:GetPlayerByUserId(userId)
+	local character=attacker and attacker.Character
+	local item=Catalog.ById[id]
+	if not character or not item or item.Category~="Club" then return end
+	local tool=nil
+	for _,child in character:GetChildren() do
+		if child:IsA("Tool") and child:GetAttribute("ClubId")==id then tool=child; break end
+	end
+	if not tool then return end
+	local rest=tool.Grip
+	local animation=Instance.new("StringValue")
+	animation.Name="toolanim"; animation.Value="Slash"; animation.Parent=tool
+	Debris:AddItem(animation,1)
+	TweenService:Create(tool,TweenInfo.new(item.Windup),{Grip=rest*CFrame.Angles(0,0,math.rad(-65))}):Play()
+	task.delay(item.Windup,function()
+		if not tool.Parent then return end
+		TweenService:Create(tool,TweenInfo.new(0.12),{Grip=rest*CFrame.Angles(math.rad(75),0,math.rad(45))}):Play()
+		task.delay(0.14,function() if tool.Parent then TweenService:Create(tool,TweenInfo.new(0.2),{Grip=rest}):Play() end end)
+	end)
+end)
+remotes.ClubHit.OnClientEvent:Connect(function(_,_,position,id)
+	local camera=workspace.CurrentCamera
+	if camera and (camera.CFrame.Position-position).Magnitude>90 then return end
+	local item=Catalog.ById[id]
+	if not item then return end
+	local anchor=Instance.new("Part")
+	anchor.Size=Vector3.new(0.1,0.1,0.1); anchor.Position=position
+	anchor.Transparency=1; anchor.Anchored=true
+	anchor.CanCollide=false; anchor.CanTouch=false; anchor.CanQuery=false
+	anchor.Parent=workspace
+	local attachment=Instance.new("Attachment"); attachment.Parent=anchor
+	local sparks=Instance.new("ParticleEmitter")
+	sparks.Texture="rbxasset://textures/particles/sparkles_main.dds"
+	sparks.Color=ColorSequence.new(Color3.fromRGB(item.Color[1],item.Color[2],item.Color[3]))
+	sparks.Enabled=false; sparks.Rate=0
+	sparks.Speed=NumberRange.new(4,9); sparks.Lifetime=NumberRange.new(0.15,0.35)
+	sparks.SpreadAngle=Vector2.new(180,180); sparks.Parent=attachment
+	sparks:Emit(15)
+	Debris:AddItem(anchor,1)
+	local sound=Instance.new("Sound")
+	sound.SoundId="rbxasset://sounds/electronicpingshort.wav"
+	sound.PlaybackSpeed=0.6; sound.Volume=0.2; sound.Parent=SoundService
+	sound:Play(); Debris:AddItem(sound,2)
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="46">
           <Properties>
             <string name="Name">CoinController</string>
             <string name="Source"><![CDATA[--!strict
@@ -2153,7 +2631,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="43">
+        <Item class="LocalScript" referent="47">
           <Properties>
             <string name="Name">CosmeticEffects</string>
             <string name="Source"><![CDATA[--!strict
@@ -2196,7 +2674,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="44">
+        <Item class="LocalScript" referent="48">
           <Properties>
             <string name="Name">EffectsController</string>
             <string name="Source"><![CDATA[--!strict
@@ -2248,7 +2726,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="45">
+        <Item class="LocalScript" referent="49">
           <Properties>
             <string name="Name">HUDController</string>
             <string name="Source"><![CDATA[--!strict
@@ -2426,7 +2904,7 @@ resize()
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="46">
+        <Item class="LocalScript" referent="50">
           <Properties>
             <string name="Name">MechanismClient</string>
             <string name="Source"><![CDATA[--!strict
@@ -2482,6 +2960,7 @@ RunService.PreSimulation:Connect(function(dt)
 			end
 		end
 	end
+	if workspace:GetServerTimeNow()<(root:GetAttribute("ClubKnockbackUntil") or 0) then return end
 	if humanoid.Health<=0 or humanoid:GetState()==Enum.HumanoidStateType.Jumping then return end
 	rayParams.FilterDescendantsInstances={character}
 	rayParams.CollisionGroup=root.CollisionGroup
@@ -2502,7 +2981,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="47">
+        <Item class="LocalScript" referent="51">
           <Properties>
             <string name="Name">RecoveryController</string>
             <string name="Source"><![CDATA[--!strict
@@ -2527,7 +3006,7 @@ update()
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="48">
+        <Item class="LocalScript" referent="52">
           <Properties>
             <string name="Name">ShopController</string>
             <string name="Source"><![CDATA[--!strict
@@ -2600,7 +3079,7 @@ rounded(panel)
 local limit=Instance.new("UISizeConstraint")
 limit.MaxSize=Vector2.new(720,600)
 limit.Parent=panel
-text(panel,"МАГАЗИН • КОСМЕТИКА",UDim2.fromOffset(14,8),UDim2.new(1,-60,0,26),18)
+text(panel,"МАГАЗИН • ДУБИНКИ И СТИЛЬ",UDim2.fromOffset(14,8),UDim2.new(1,-60,0,26),16)
 local close=button(panel,"×",UDim2.new(1,-43,0,8),UDim2.fromOffset(32,28))
 close.Activated:Connect(function() panel.Visible=false end)
 local balance=text(panel,"Загрузка монет…",UDim2.fromOffset(14,37),UDim2.new(1,-28,0,24),14)
@@ -2630,7 +3109,7 @@ notice.TextXAlignment=Enum.TextXAlignment.Center
 notice.TextStrokeTransparency=0.25
 notice.Visible=false
 local state=nil
-local category="Trail"
+local category="Club"
 local tabButtons={}
 local function card(name,description,color,actionText,enabled,callback)
 	local row=Instance.new("Frame")
@@ -2657,30 +3136,43 @@ local function render()
 	open.Text="◉ "..state.Coins.."\nМАГАЗИН"
 	balance.Text="◉ "..state.Coins..(if state.Persistent then " монет" else " монет · Studio: только эта сессия")
 	if category=="Donate" then
-		hint.Text="Поддержка добровольная. Монеты покупают только косметику."
+		hint.Text="Наборы монет и постоянные Game Pass-дубинки"
 		for _,product in state.Products do
-			card(product.Name,"Набор монет + титул поддержки. Стоимость подтвердит Roblox.",Color3.fromRGB(255,210,80),
-				if product.Enabled then "Купить за Robux" else "Скоро",product.Enabled,function() remotes.ShopRequest:FireServer("donate",product.Key) end)
+			local owned=product.ItemId and state.Owned[product.ItemId]
+			local description=if product.Type=="Pass" then "Дубинка навсегда + титул поддержки. Цена в окне Roblox."
+				else "Монеты на косметику и дубинки. Цена в окне Roblox."
+			card(product.Name,description,Color3.fromRGB(255,210,80),
+				if owned then "Куплено" elseif product.Enabled then "Купить за Robux" else "Скоро",product.Enabled and not owned,function() remotes.ShopRequest:FireServer("donate",product.Key) end)
 		end
 	else
-		hint.Text="Без бонусов к скорости, прыжку и прохождению"
+		hint.Text=if category=="Club" then "Вне безопасных зон · без прямого урона · пауза между ударами" else "Следы, титулы и эффекты не усиливают персонажа"
 		for _,item in Catalog.Items do
 			if item.Category~=category then continue end
 			local owned=state.Owned[item.Id]
 			local equipped=state.Equipped[category]==item.Id
+			local passOffer=nil
+			if item.RequiredPass then for _,offer in state.Products do if offer.Key==item.RequiredPass and offer.Type=="Pass" then passOffer=offer; break end end end
 			local locked=(item.RequiredWin and not state.WinRewarded) or (item.RequiredSupport and not state.Supporter)
-			local description=if item.RequiredWin then "За первую победу на 50-м этапе"
+			local description=if item.Category=="Club" then string.format("Отброс %d • Дальность %.1f • Пауза %.2fс",item.Power,item.Range,item.Cooldown)
+				elseif item.RequiredWin then "За первую победу на 50-м этапе"
 				elseif item.RequiredSupport then "В подарок за любой набор поддержки"
 				elseif owned then "Есть в вашей коллекции" else "Постоянный косметический предмет"
+			local enabled=not equipped and not locked
 			local action=if equipped then "Выбрано" elseif locked then "Закрыто" elseif owned then "Надеть" else "◉ "..item.Price
-			card(item.Name,description,Color3.fromRGB(item.Color[1],item.Color[2],item.Color[3]),action,not equipped and not locked,function()
-				remotes.ShopRequest:FireServer(if owned then "equip" else "buy",item.Id)
+			if item.RequiredPass and not owned then
+				enabled=passOffer~=nil and passOffer.Enabled
+				action=if enabled then "За Robux" else "Скоро"
+			end
+			card(item.Name,description,Color3.fromRGB(item.Color[1],item.Color[2],item.Color[3]),action,enabled,function()
+				if item.RequiredPass and not owned then remotes.ShopRequest:FireServer("donate",item.RequiredPass)
+				else remotes.ShopRequest:FireServer(if owned then "equip" else "buy",item.Id) end
 			end)
 		end
 	end
 end
-for i,entry in {{"Trail","Следы"},{"Victory","Победа"},{"Title","Титулы"},{"Donate","Донат"}} do
-	local b=button(tabs,entry[2],UDim2.new((i-1)/4,3,0,0),UDim2.new(0.25,-6,1,0))
+for i,entry in {{"Club","Дубинки"},{"Trail","Следы"},{"Victory","Победа"},{"Title","Титулы"},{"Donate","Донат"}} do
+	local b=button(tabs,entry[2],UDim2.new((i-1)/5,3,0,0),UDim2.new(0.2,-6,1,0))
+	b.TextSize=12
 	tabButtons[entry[1]]=b
 	b.Activated:Connect(function() category=entry[1]; render() end)
 end
@@ -2713,7 +3205,7 @@ render()
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="49">
+        <Item class="LocalScript" referent="53">
           <Properties>
             <string name="Name">StartupController</string>
             <string name="Source"><![CDATA[--!strict
@@ -2787,7 +3279,7 @@ end)
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="50">
+  <Item class="Workspace" referent="54">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="FallenPartsDestroyHeight">-150</float>

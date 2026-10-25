@@ -4,6 +4,7 @@ local Shared=game:GetService("ReplicatedStorage").Shared
 local Rules=require(Shared.ProgressRules)
 local Recovery=require(script.Parent.RecoveryService)
 local Economy=require(script.Parent.EconomyService)
+local Clubs=require(script.Parent.ClubService)
 local Service={}
 function Service.publish(player,p)
 	Recovery.update(player,p)
@@ -51,6 +52,7 @@ function Service.start(tower,data,remotes)
 			if touching and Rules.canCheckpoint(p,stage) then
 				Rules.advance(p,stage,os.clock())
 				player.RespawnLocation=checkpoint
+				Clubs.protect(player,2)
 				if p.Won then
 					p.FinishTime=workspace:GetServerTimeNow()-p.StartedAt
 					if p.FullRun then p.BestTime=math.min(p.BestTime or math.huge,p.FinishTime) end

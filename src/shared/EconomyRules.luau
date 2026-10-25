@@ -69,9 +69,17 @@ function Rules.apply(old,command,catalog)
 		state.Receipts[command.Id]=true
 		state.Supporter=true
 		state.Owned.title_supporter=true
+	elseif command.Kind=="pass" then
+		local item=catalog.ById[command.Id]
+		if not item or not item.RequiredPass or item.RequiredPass~=command.PassKey or command.Verified~=true then return state,"invalid" end
+		if state.Owned[item.Id] then return state,"duplicate" end
+		state.Owned[item.Id]=true
+		state.Supporter=true
+		state.Owned.title_supporter=true
 	elseif command.Kind=="buy" or command.Kind=="equip" then
 		local item=catalog.ById[command.Id]
 		if not item then return state,"invalid" end
+		if item.RequiredPass and not state.Owned[item.Id] then return state,"requires_pass" end
 		if item.RequiredWin and not state.WinRewarded then return state,"requires_win" end
 		if item.RequiredSupport and not state.Supporter then return state,"requires_support" end
 		if not state.Owned[item.Id] then

@@ -84,7 +84,7 @@ function Test.run(check,rules,catalog,processor)
 	check(rules.sanitize({Equipped={Trail="fx_gold"}},catalog).Equipped.Trail=="trail_none","Cross-category equip accepted")
 	for _,item in catalog.Items do
 		check(item.Price>=0 and item.Price%1==0,"Invalid cosmetic price")
-		check(item.Category=="Trail" or item.Category=="Victory" or item.Category=="Title","Gameplay upgrade in cosmetic catalog")
+		check(item.Category=="Trail" or item.Category=="Victory" or item.Category=="Title" or item.Category=="Club","Unknown shop category")
 	end
 	-- Exercise the exact receipt processor used by the server, including a lost
 	-- successful response. These are mock storage callbacks, not live Robux tests.

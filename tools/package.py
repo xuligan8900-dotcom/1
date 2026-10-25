@@ -15,7 +15,7 @@ with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
         output.write(path, path.relative_to(ROOT).as_posix())
     output.write(BUILD / "MechanicalTower.rbxlx", "MechanicalTower.rbxlx")
     output.write(BUILD / "verification.json", "verification.json")
-    output.write(BUILD / "MechanicalTower-v5.0.rbxlx", "MechanicalTower-v5.0.rbxlx")
+    output.write(BUILD / "MechanicalTower-v6.0.rbxlx", "MechanicalTower-v6.0.rbxlx")
 with zipfile.ZipFile(archive) as output:
     assert output.testzip() is None
     print(f"Verified archive: {len(output.namelist())} files, {archive.stat().st_size} bytes")

@@ -68,7 +68,7 @@ rounded(panel)
 local limit=Instance.new("UISizeConstraint")
 limit.MaxSize=Vector2.new(720,600)
 limit.Parent=panel
-text(panel,"МАГАЗИН • КОСМЕТИКА",UDim2.fromOffset(14,8),UDim2.new(1,-60,0,26),18)
+text(panel,"МАГАЗИН • ДУБИНКИ И СТИЛЬ",UDim2.fromOffset(14,8),UDim2.new(1,-60,0,26),16)
 local close=button(panel,"×",UDim2.new(1,-43,0,8),UDim2.fromOffset(32,28))
 close.Activated:Connect(function() panel.Visible=false end)
 local balance=text(panel,"Загрузка монет…",UDim2.fromOffset(14,37),UDim2.new(1,-28,0,24),14)
@@ -98,7 +98,7 @@ notice.TextXAlignment=Enum.TextXAlignment.Center
 notice.TextStrokeTransparency=0.25
 notice.Visible=false
 local state=nil
-local category="Trail"
+local category="Club"
 local tabButtons={}
 local function card(name,description,color,actionText,enabled,callback)
 	local row=Instance.new("Frame")
@@ -125,30 +125,43 @@ local function render()
 	open.Text="◉ "..state.Coins.."\nМАГАЗИН"
 	balance.Text="◉ "..state.Coins..(if state.Persistent then " монет" else " монет · Studio: только эта сессия")
 	if category=="Donate" then
-		hint.Text="Поддержка добровольная. Монеты покупают только косметику."
+		hint.Text="Наборы монет и постоянные Game Pass-дубинки"
 		for _,product in state.Products do
-			card(product.Name,"Набор монет + титул поддержки. Стоимость подтвердит Roblox.",Color3.fromRGB(255,210,80),
-				if product.Enabled then "Купить за Robux" else "Скоро",product.Enabled,function() remotes.ShopRequest:FireServer("donate",product.Key) end)
+			local owned=product.ItemId and state.Owned[product.ItemId]
+			local description=if product.Type=="Pass" then "Дубинка навсегда + титул поддержки. Цена в окне Roblox."
+				else "Монеты на косметику и дубинки. Цена в окне Roblox."
+			card(product.Name,description,Color3.fromRGB(255,210,80),
+				if owned then "Куплено" elseif product.Enabled then "Купить за Robux" else "Скоро",product.Enabled and not owned,function() remotes.ShopRequest:FireServer("donate",product.Key) end)
 		end
 	else
-		hint.Text="Без бонусов к скорости, прыжку и прохождению"
+		hint.Text=if category=="Club" then "Вне безопасных зон · без прямого урона · пауза между ударами" else "Следы, титулы и эффекты не усиливают персонажа"
 		for _,item in Catalog.Items do
 			if item.Category~=category then continue end
 			local owned=state.Owned[item.Id]
 			local equipped=state.Equipped[category]==item.Id
+			local passOffer=nil
+			if item.RequiredPass then for _,offer in state.Products do if offer.Key==item.RequiredPass and offer.Type=="Pass" then passOffer=offer; break end end end
 			local locked=(item.RequiredWin and not state.WinRewarded) or (item.RequiredSupport and not state.Supporter)
-			local description=if item.RequiredWin then "За первую победу на 50-м этапе"
+			local description=if item.Category=="Club" then string.format("Отброс %d • Дальность %.1f • Пауза %.2fс",item.Power,item.Range,item.Cooldown)
+				elseif item.RequiredWin then "За первую победу на 50-м этапе"
 				elseif item.RequiredSupport then "В подарок за любой набор поддержки"
 				elseif owned then "Есть в вашей коллекции" else "Постоянный косметический предмет"
+			local enabled=not equipped and not locked
 			local action=if equipped then "Выбрано" elseif locked then "Закрыто" elseif owned then "Надеть" else "◉ "..item.Price
-			card(item.Name,description,Color3.fromRGB(item.Color[1],item.Color[2],item.Color[3]),action,not equipped and not locked,function()
-				remotes.ShopRequest:FireServer(if owned then "equip" else "buy",item.Id)
+			if item.RequiredPass and not owned then
+				enabled=passOffer~=nil and passOffer.Enabled
+				action=if enabled then "За Robux" else "Скоро"
+			end
+			card(item.Name,description,Color3.fromRGB(item.Color[1],item.Color[2],item.Color[3]),action,enabled,function()
+				if item.RequiredPass and not owned then remotes.ShopRequest:FireServer("donate",item.RequiredPass)
+				else remotes.ShopRequest:FireServer(if owned then "equip" else "buy",item.Id) end
 			end)
 		end
 	end
 end
-for i,entry in {{"Trail","Следы"},{"Victory","Победа"},{"Title","Титулы"},{"Donate","Донат"}} do
-	local b=button(tabs,entry[2],UDim2.new((i-1)/4,3,0,0),UDim2.new(0.25,-6,1,0))
+for i,entry in {{"Club","Дубинки"},{"Trail","Следы"},{"Victory","Победа"},{"Title","Титулы"},{"Donate","Донат"}} do
+	local b=button(tabs,entry[2],UDim2.new((i-1)/5,3,0,0),UDim2.new(0.2,-6,1,0))
+	b.TextSize=12
 	tabButtons[entry[1]]=b
 	b.Activated:Connect(function() category=entry[1]; render() end)
 end

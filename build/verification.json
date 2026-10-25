@@ -1,15 +1,16 @@
 {
-  "release": "5.0",
-  "luau_files_compiled": 43,
+  "release": "6.0",
+  "luau_files_compiled": 48,
   "standalone_test_stdout": [
     "Minimum oriented static edge gap: 1.899 studs",
     "Traversal PASS: 21 varied stages, six surface types, connected slopes, R15 column clearance",
     "Economy PASS: 100 coin claims/day, stage rewards, purchase/equip, durable receipt replay model, independent wallets",
-    "PASS: 9370 assertions, 50 stages / 600 route segments / 150 mechanisms / 16 types",
+    "Combat PASS: six clubs, free migration, paid ownership, cooldown, cone, range, walls and safe-zone rules",
+    "PASS: 9550 assertions, 50 stages / 600 route segments / 150 mechanisms / 16 types",
     "Maximum static center-to-center segment: 6.092 studs; route rise 1.667 studs",
     "NOT TESTED: Roblox physics, network ownership, Studio UI, live DataStore. See docs/TESTING.md."
   ],
-  "place_scripts": 40,
+  "place_scripts": 44,
   "rojo_build": "passed",
   "roblox_studio_executed": false,
   "runtime_smoke": "Included; executes on Play in Studio, not executed in cloud",
@@ -21,6 +22,8 @@
     "mobile layout",
     "finish effects",
     "live economy DataStore",
-    "real Marketplace receipts and Robux checkout"
+    "real Marketplace receipts and Robux checkout",
+    "multiplayer club knockback and network ownership",
+    "live Game Pass ownership"
   ]
 }

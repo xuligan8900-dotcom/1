@@ -9,4 +9,9 @@ return table.freeze({
 		{Key="coins_medium",Name="1000 монет",Coins=1000,ProductId=0},
 		{Key="coins_large",Name="3000 монет",Coins=3000,ProductId=0},
 	},
+	-- Permanent club ownership uses Game Passes, not repeatable coin products.
+	GamePasses={
+		{Key="club_plasma",Name="Плазменная дубинка навсегда",ItemId="club_plasma",PassId=0},
+		{Key="club_cosmic",Name="Космическая дубинка навсегда",ItemId="club_cosmic",PassId=0},
+	},
 })

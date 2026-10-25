@@ -51,6 +51,7 @@ RunService.PreSimulation:Connect(function(dt)
 			end
 		end
 	end
+	if workspace:GetServerTimeNow()<(root:GetAttribute("ClubKnockbackUntil") or 0) then return end
 	if humanoid.Health<=0 or humanoid:GetState()==Enum.HumanoidStateType.Jumping then return end
 	rayParams.FilterDescendantsInstances={character}
 	rayParams.CollisionGroup=root.CollisionGroup

@@ -214,6 +214,7 @@ end
 check(not Numeric.near(0/0,6.2),"NaN passes numeric diagnostic")
 TraversalTests.run(check,Stages,Route,Traversal)
 EconomyTests.run(check,EconomyRules,CosmeticCatalog,require("../src/shared/ReceiptProcessor"))
+require("./combat").run(check,require("../src/shared/CombatRules"),EconomyRules,CosmeticCatalog,require("../src/shared/PassProcessor"))
 print(string.format("PASS: %d assertions, 50 stages / 600 route segments / 150 mechanisms / %d types",checks,16))
 print(string.format("Maximum static center-to-center segment: %.3f studs; route rise %.3f studs",maxJump,20/12))
 print("NOT TESTED: Roblox physics, network ownership, Studio UI, live DataStore. See docs/TESTING.md.")
