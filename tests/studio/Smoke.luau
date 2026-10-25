@@ -9,6 +9,7 @@ function Test.run(tower)
 	local Recovery=require(Shared.RecoveryRules)
 	local Geometry=require(Shared.TrapGeometry)
 	local Numeric=require(Shared.Numeric)
+	local Traversal=require(Shared.Traversal)
 	local PhysicsService=game:GetService("PhysicsService")
 	assert(Route.validate(Definitions))
 	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
@@ -67,6 +68,27 @@ function Test.run(tower)
 		assert(spawn.Position.Y>checkpoint.Position.Y+2)
 		local stage=tower.Stages:FindFirstChild(string.format("Stage_%02d_%s",n,Definitions[n].Name))
 		assert(stage and stage:GetAttribute("StageId")==n)
+		assert(stage:GetAttribute("Traversal")==Definitions[n].Traversal,"Traversal variant missing")
+		if Definitions[n].Traversal=="posts" then
+			for node=1,11,2 do
+				local post=stage:FindFirstChild("Post_"..node)
+				assert(post and post.Shape==Enum.PartType.Cylinder,"Missing hop column")
+				local _,top=Route.point(n,node,Definitions[n].Layout)
+				assert(Numeric.near(post.Position.Y+post.Size.X/2,top),"Column top not aligned to route")
+			end
+		elseif Definitions[n].Traversal~="jumps" then
+			local walking=stage:FindFirstChild("Traversal_"..Definitions[n].Traversal)
+			assert(walking,"Missing walking route")
+			local count=0
+			for _,part in walking:GetChildren() do
+				if part:IsA("BasePart") and part:GetAttribute("TraversalSurface") then
+					count+=1
+					assert(part.Anchored and part.CanCollide,"Nonphysical walking beam")
+					assert(Numeric.near(part:GetAttribute("WalkWidth"),Traversal.width(Definitions[n])),"Wrong beam width")
+				end
+			end
+			assert(count>=6,"Incomplete walking route")
+		end
 	end
 	print("[StudioSmoke] PASS: generated hierarchy, daylight, 9 recovery floors, collision matrix, 50 respawn checkpoints, 150 mechanisms, timing and deterministic poses. Physics and persistence still need playtesting.")
 	return true

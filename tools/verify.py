@@ -42,9 +42,9 @@ def main():
     assert len(embedded) == expected, (len(embedded), expected)
     assert all(node.text and node.text.strip() for node in embedded), "Empty embedded script"
     print(f"PASS: built Roblox XML with {len(embedded)} nonempty scripts/modules", flush=True)
-    shutil.copyfile(place, BUILD / "MechanicalTower-v3.1.rbxlx")
+    shutil.copyfile(place, BUILD / "MechanicalTower-v4.0.rbxlx")
     report = {
-        "release": "3.1",
+        "release": "4.0",
         "luau_files_compiled": len(sources),
         "standalone_test_stdout": result.stdout.strip().splitlines(),
         "place_scripts": len(embedded),

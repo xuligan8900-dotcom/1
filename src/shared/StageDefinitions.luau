@@ -53,11 +53,19 @@ local rows = {
 	{"Master Mechanic", "gear", "press", "laser", "needles", 1.24},
 	{"Crown Ascent", "lift", "ring", "door", "crown", 1.05},
 }
+-- Surface topology is configured independently from traps and radial layout.
+local traversal={
+	[6]="rails",[8]="zigzag",[12]="zigzag",[16]="posts",[17]="rails",
+	[18]="pipes",[22]="zigzag",[26]="posts",[28]="pipes",[29]="wrap",
+	[31]="rails",[33]="posts",[35]="needles",[38]="wrap",[39]="posts",
+	[41]="zigzag",[43]="pipes",[45]="wrap",[46]="rails",[48]="zigzag",[49]="needles",
+}
 local definitions = {}
 for i, row in rows do
 	definitions[i] = table.freeze({
 		Id = i, Name = row[1], Traps = {row[2], row[3], row[4]},
 		Layout = row[5], Speed = row[6], Zone = math.ceil(i / 10),
+		Traversal = traversal[i] or "jumps",
 		-- Different phase offsets are deterministic, never randomized at runtime.
 		Phase = (i * 0.37) % 3,
 	})

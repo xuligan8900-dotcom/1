@@ -9,6 +9,8 @@ local Recovery=require("../src/shared/RecoveryRules")
 local Difficulty=require("../src/shared/Difficulty")
 local Geometry=require("../src/shared/TrapGeometry")
 local Numeric=require("../src/shared/Numeric")
+local Traversal=require("../src/shared/Traversal")
+local TraversalTests=require("./traversal")
 local checks=0
 local function check(condition,message)
 	assert(condition,message)
@@ -207,6 +209,7 @@ for _,size in {Geometry.BladeLength,Geometry.SweepLength} do
 	check(not Numeric.near(engineSize,size+0.1),"Tolerance hides an actual wrong blade size")
 end
 check(not Numeric.near(0/0,6.2),"NaN passes numeric diagnostic")
+TraversalTests.run(check,Stages,Route,Traversal)
 print(string.format("PASS: %d assertions, 50 stages / 600 route segments / 150 mechanisms / %d types",checks,16))
 print(string.format("Maximum static center-to-center segment: %.3f studs; route rise %.3f studs",maxJump,20/12))
 print("NOT TESTED: Roblox physics, network ownership, Studio UI, live DataStore. See docs/TESTING.md.")

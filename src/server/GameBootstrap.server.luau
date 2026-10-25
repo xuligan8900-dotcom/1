@@ -1,7 +1,7 @@
 --!strict
 local Players=game:GetService("Players")
 Players.CharacterAutoLoads=false
-workspace:SetAttribute("TowerVersion","3.1")
+workspace:SetAttribute("TowerVersion","4.0")
 workspace:SetAttribute("TowerBootStatus","starting")
 workspace:SetAttribute("TowerBootError",nil)
 workspace:SetAttribute("TowerDiagnosticsPassed",nil)

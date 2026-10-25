@@ -4,12 +4,15 @@ local Config = require(Shared.GameConfig)
 local Route = require(Shared.Route)
 local U = require(script.Parent.BuildUtil)
 local Traps = require(script.Parent.TrapFactory)
+local Traversal=require(Shared.Traversal)
+local Walk=require(script.Parent.TraversalBuilder)
 local Builder = {}
 function Builder.build(tower, definition)
 	local id = definition.Id
 	local stage = Instance.new("Model")
 	stage.Name = string.format("Stage_%02d_%s",id,definition.Name)
 	stage:SetAttribute("StageId",id)
+	stage:SetAttribute("Traversal",definition.Traversal)
 	stage.Parent = tower.Stages
 	local accent = Config.ZoneColors[definition.Zone]
 	local frames = {}
@@ -26,10 +29,12 @@ function Builder.build(tower, definition)
 		local station = if node==2 then 1 elseif node==6 then 2 elseif node==10 then 3 else nil
 		local kind = if station then definition.Traps[station] else nil
 		local moving = kind=="move" or kind=="lift" or kind=="orbit" or kind=="gear" or kind=="fade" or kind=="timer" or kind=="conveyor"
-		local width = Route.width(id,node,definition.Layout)
+		local width,depth,shape=Traversal.node(definition,node,Route.width(id,node,definition.Layout),Route.depth(id,node))
 		if not moving then
-			local p = U.part(stage,"Landing_"..node,Vector3.new(width,1,Route.depth(id,node)),cf*CFrame.new(0,-0.5,0))
-			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,Route.depth(id,node)-0.3),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
+			local p
+			if shape=="post" then p=Walk.post(stage,"Post_"..node,cf,width,accent)
+			else p=U.part(stage,"Landing_"..node,Vector3.new(width,1,depth),cf*CFrame.new(0,-0.5,0)) end
+			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,depth-0.3),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
 			if node%4==0 then
 				-- Side rails leave both route ends open and never close the fall shafts.
 				for side=-1,1,2 do
@@ -75,6 +80,7 @@ function Builder.build(tower, definition)
 			U.label(sign,"WAIT FOR GREEN\n⇧ JUMP",accent)
 		end
 	end
+	Walk.build(stage,definition,accent)
 	-- A few industrial details per zone, all outside the jumping corridor.
 	local x,y,z=Route.point(id,6,definition.Layout)
 	U.part(stage,"ServicePipe",Vector3.new(0.6,13,0.6),CFrame.new(x*1.32,y+3,z*1.32),accent)
