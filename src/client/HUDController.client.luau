@@ -129,8 +129,8 @@ local function update()
 	progressTween=TweenService:Create(fill,TweenInfo.new(0.4,Enum.EasingStyle.Quad),{Size=UDim2.fromScale(stage/50,1)})
 	progressTween:Play()
 	status.Text=if not player:GetAttribute("DataLoaded") then "Loading progress…"
-		elseif not player:GetAttribute("Persistence") then "STUDIO · Session only · DataStore disabled"
-		elseif player:GetAttribute("SavePending") then "Saving progress…" else "Progress saved · Falls do not reset you"
+		elseif not player:GetAttribute("Persistence") then string.format("Respawn: %d · Safety floor: %d · Studio session",stage,player:GetAttribute("RecoveryStage") or 0)
+		elseif player:GetAttribute("SavePending") then "Saving progress…" else string.format("Saved · Respawn: %d · Safety floor: %d",stage,player:GetAttribute("RecoveryStage") or 0)
 	victory.Visible=player:GetAttribute("Won")==true
 	local finishTime=player:GetAttribute("FinishTime")
 	winInfo.Text=if finishTime then "50 / 50 · MASTER MECHANIC\n"..(if player:GetAttribute("FullRun") then "Full run: " else "Session time: ")..formatTime(finishTime).."\nMaximum progress is preserved."
@@ -140,7 +140,7 @@ local function update()
 		cp.Color=if cp:GetAttribute("Stage")<=stage then Color3.fromRGB(65,255,155) else Config.ZoneColors[math.ceil(cp:GetAttribute("Stage")/10)]
 	end
 end
-for _,attribute in {"DataLoaded","RunStage","MaxStage","Won","Completed","SavePending","Persistence","FinishTime","Deaths"} do
+for _,attribute in {"DataLoaded","RunStage","MaxStage","Won","Completed","SavePending","Persistence","FinishTime","Deaths","RecoveryStage"} do
 	player:GetAttributeChangedSignal(attribute):Connect(update)
 end
 local function resize()

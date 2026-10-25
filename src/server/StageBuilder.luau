@@ -28,8 +28,8 @@ function Builder.build(tower, definition)
 		local moving = kind=="move" or kind=="lift" or kind=="orbit" or kind=="gear" or kind=="fade" or kind=="timer" or kind=="conveyor"
 		local width = Route.width(id,node,definition.Layout)
 		if not moving then
-			local p = U.part(stage,"Landing_"..node,Vector3.new(width,1,if node%4==0 then 7 else 5.2),cf*CFrame.new(0,-0.5,0))
-			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,3.8),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
+			local p = U.part(stage,"Landing_"..node,Vector3.new(width,1,Route.depth(id,node)),cf*CFrame.new(0,-0.5,0))
+			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,Route.depth(id,node)-0.3),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
 			if node%4==0 then
 				-- Side rails leave both route ends open and never close the fall shafts.
 				for side=-1,1,2 do
@@ -51,7 +51,21 @@ function Builder.build(tower, definition)
 			gate:SetAttribute("Order",node/4)
 		end
 		if node==12 then
-			local cp = U.part(tower.Checkpoints,"Checkpoint_"..id,Vector3.new(7,0.2,6),cf*CFrame.new(0,0.12,0),accent,Enum.Material.Neon,false)
+			local cp=Instance.new("SpawnLocation")
+			cp.Name="Checkpoint_"..id
+			cp.Size=Vector3.new(5,0.2,4)
+			cp.CFrame=cf*CFrame.new(0,0.12,0)
+			cp.Color=accent
+			cp.Material=Enum.Material.Neon
+			cp.Anchored=true
+			cp.CanCollide=false
+			cp.CanQuery=false
+			cp.CanTouch=true
+			cp.Neutral=true
+			cp.Enabled=true
+			cp.Duration=0
+			cp.AllowTeamChangeOnTouch=false
+			cp.Parent=tower.Checkpoints
 			cp:SetAttribute("Stage",id)
 			cp:SetAttribute("Spawn",cf*CFrame.new(0,4,0))
 			U.label(cp,string.format("CHECKPOINT %02d / 50\n%s",id,definition.Name),accent)

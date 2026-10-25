@@ -53,6 +53,7 @@ RunService.PreSimulation:Connect(function(dt)
 	end
 	if humanoid.Health<=0 or humanoid:GetState()==Enum.HumanoidStateType.Jumping then return end
 	rayParams.FilterDescendantsInstances={character}
+	rayParams.CollisionGroup=root.CollisionGroup
 	local distance=humanoid.HipHeight+root.Size.Y/2+0.65
 	local hit=workspace:Raycast(root.Position,Vector3.new(0,-distance,0),rayParams)
 	if not hit or hit.Normal.Y<0.5 or not hit.Instance:GetAttribute("Carry") then return end

@@ -37,6 +37,8 @@ local function join(player)
 end
 Players.PlayerAdded:Connect(join)
 Players.PlayerRemoving:Connect(function(player)
+	local profile=Data.Profiles[player]
+	if profile and profile.CollisionConnection then profile.CollisionConnection:Disconnect() end
 	if connections[player] then connections[player]:Disconnect(); connections[player]=nil end
 	Data.save(player,os.clock()+15)
 	Data.Profiles[player]=nil
@@ -47,6 +49,7 @@ remotes.PlayAgain.OnServerEvent:Connect(function(player)
 	local p=Data.Profiles[player]
 	if not p or p.Spawning or not Rules.replay(p,workspace:GetServerTimeNow(),os.clock()) then return end
 	Checkpoints.publish(player,p)
+	player.RespawnLocation=tower.Foundation.LobbySpawn
 	local character=player.Character
 	local humanoid=character and character:FindFirstChildOfClass("Humanoid")
 	if character and humanoid and humanoid.Health>0 then

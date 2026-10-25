@@ -6,7 +6,19 @@ function Test.run(tower)
 	local Definitions=require(Shared.StageDefinitions)
 	local Route=require(Shared.Route)
 	local Motion=require(Shared.TrapMotion)
+	local Recovery=require(Shared.RecoveryRules)
+	local PhysicsService=game:GetService("PhysicsService")
 	assert(Route.validate(Definitions))
+	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
+	for floor=1,9 do
+		local model=tower.RecoveryFloors:FindFirstChild("Recovery_"..floor*5)
+		assert(model and model.CatchDeck.Size.X==108 and model.CatchDeck.Size.Z==108)
+		assert(math.abs(model.CatchDeck.Position.Y+model.CatchDeck.Size.Y/2-Recovery.floorHeight(floor))<0.01)
+		for section=0,9 do
+			assert(PhysicsService:CollisionGroupsAreCollidable(Recovery.floorGroup(floor),Recovery.playerGroup(section))==Recovery.canStandOn(section,floor),"Incorrect recovery collision matrix")
+		end
+	end
+	assert(game:GetService("Lighting").ClockTime==13.5,"Daylight settings missing")
 	assert(tower:GetAttribute("Ready"))
 	assert(#tower.Stages:GetChildren()==50)
 	assert(#tower.Checkpoints:GetChildren()==50)
@@ -22,8 +34,8 @@ function Test.run(tower)
 		local active=model:GetAttribute("Active")
 		local speed=model:GetAttribute("Speed")
 		local phase=model:GetAttribute("Phase")
-		assert(speed>0 and warning/speed>=0.7,"Warning window too short")
-		assert(safe/speed>=2.5,"Safe window too short")
+		assert(speed>0 and warning/speed>=0.75-0.00001,"Warning window too short")
+		assert(safe/speed>=1.8-0.00001,"Safe window too short")
 		for _,sample in {0.1,safe+warning*0.5,safe+warning+active*0.5} do
 			local time=(sample-phase)/speed
 			local first,state=Motion.evaluate(model,time)
@@ -42,12 +54,13 @@ function Test.run(tower)
 	for n=1,50 do
 		local checkpoint=tower.Checkpoints:FindFirstChild("Checkpoint_"..n)
 		assert(checkpoint:GetAttribute("Stage")==n)
+		assert(checkpoint:IsA("SpawnLocation") and checkpoint.Enabled and checkpoint.CanTouch,"Broken respawn checkpoint")
 		local spawn=checkpoint:GetAttribute("Spawn")
 		assert(spawn.Position.Y>checkpoint.Position.Y+2)
 		local stage=tower.Stages:FindFirstChild(string.format("Stage_%02d_%s",n,Definitions[n].Name))
 		assert(stage and stage:GetAttribute("StageId")==n)
 	end
-	print("[StudioSmoke] PASS: generated hierarchy, 50 checkpoints, 150 mechanisms, timing and deterministic poses. Physics and persistence still need playtesting.")
+	print("[StudioSmoke] PASS: generated hierarchy, daylight, 9 recovery floors, collision matrix, 50 respawn checkpoints, 150 mechanisms, timing and deterministic poses. Physics and persistence still need playtesting.")
 	return true
 end
 return Test

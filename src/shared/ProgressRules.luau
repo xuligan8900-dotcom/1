@@ -1,8 +1,11 @@
 --!strict
 -- No client input participates in this transition. Pure functions are tested outside Studio.
 local Rules={}
-function Rules.canCheckpoint(profile, stage, gate, elapsed)
-	return not profile.Won and stage==profile.RunStage+1 and stage<=50 and gate==2 and elapsed>=3
+function Rules.canCheckpoint(profile, stage)
+	return not profile.Won and stage==profile.RunStage+1 and stage>=1 and stage<=50
+end
+function Rules.onPad(x,y,z,width,depth)
+	return math.abs(x)<=width/2+0.75 and math.abs(z)<=depth/2+0.75 and y>=-0.5 and y<=6
 end
 function Rules.advance(profile, stage, now)
 	profile.RunStage=stage

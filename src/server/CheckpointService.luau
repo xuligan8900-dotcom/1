@@ -2,8 +2,10 @@
 local RunService=game:GetService("RunService")
 local Shared=game:GetService("ReplicatedStorage").Shared
 local Rules=require(Shared.ProgressRules)
+local Recovery=require(script.Parent.RecoveryService)
 local Service={}
 function Service.publish(player,p)
+	Recovery.update(player,p)
 	player:SetAttribute("RunStage",p.RunStage)
 	player:SetAttribute("MaxStage",p.MaxStage)
 	player:SetAttribute("Deaths",p.Deaths)
@@ -44,9 +46,10 @@ function Service.start(tower,data,remotes)
 			if gate and inside(gate,root.Position,Vector3.new(4.5,3.5,3.5)) then p.Gate+=1 end
 			local checkpoint=checkpoints[stage]
 			local relative=checkpoint.CFrame:PointToObjectSpace(root.Position)
-			local touching=math.abs(relative.X)<4.5 and math.abs(relative.Z)<4 and relative.Y>=0 and relative.Y<=6
-			if touching and Rules.canCheckpoint(p,stage,p.Gate,os.clock()-p.StageEntered) then
+			local touching=Rules.onPad(relative.X,relative.Y,relative.Z,checkpoint.Size.X,checkpoint.Size.Z)
+			if touching and Rules.canCheckpoint(p,stage) then
 				Rules.advance(p,stage,os.clock())
+				player.RespawnLocation=checkpoint
 				if p.Won then
 					p.FinishTime=workspace:GetServerTimeNow()-p.StartedAt
 					if p.FullRun then p.BestTime=math.min(p.BestTime or math.huge,p.FinishTime) end

@@ -18,15 +18,22 @@ local profiles = {
 function Route.point(stage, node, layout)
 	local profile = assert(profiles[layout], "Unknown layout")
 	local angle = ((stage - 1) * math.pi / 2) + node / 12 * math.pi / 2
-	local radius = 32 + profile[node + 1]
+	local radius = 36 + profile[node + 1]
 	return radius * math.cos(angle), 8 + (stage - 1) * 20 + node * 20 / 12, radius * math.sin(angle)
 end
 function Route.width(stage, node, layout)
-	if node % 4 == 0 then return 8 end
-	if layout == "needles" then return 2.8 end
-	if layout == "beams" then return 3.3 end
-	if layout == "islands" then return 4.2 end
-	return math.max(4.5, 7 - stage * 0.045)
+	if node % 4 == 0 then return 6 end
+	if layout == "needles" then return 2.2 end
+	if layout == "beams" then return 2.6 end
+	if layout == "islands" then return 3.1 end
+	return math.max(2.8,4.8-stage*0.04)
+end
+function Route.depth(stage,node)
+	if node%4==0 then return 5 end
+	return math.max(2.8,3.8-stage*0.02)
+end
+function Route.carrierSize(stage)
+	return math.max(3.8,4.8-stage*0.02),math.max(3.2,3.8-stage*0.012)
 end
 function Route.validate(definitions)
 	assert(#definitions == 50, "Exactly 50 stages required")

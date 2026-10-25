@@ -3,16 +3,19 @@
     <Properties>
       <string name="Name">Lighting</string>
       <Color3 name="Ambient">
-        <R>0.23</R>
-        <G>0.27</G>
-        <B>0.36</B>
+        <R>0.65</R>
+        <G>0.69</G>
+        <B>0.76</B>
       </Color3>
-      <float name="Brightness">2</float>
-      <float name="ClockTime">19</float>
+      <float name="Brightness">3.2</float>
+      <float name="ClockTime">13.5</float>
+      <float name="EnvironmentDiffuseScale">1</float>
+      <float name="EnvironmentSpecularScale">0.5</float>
+      <bool name="GlobalShadows">false</bool>
       <Color3 name="OutdoorAmbient">
-        <R>0.3</R>
-        <G>0.34</G>
-        <B>0.44</B>
+        <R>0.76</R>
+        <G>0.8</G>
+        <B>0.86</B>
       </Color3>
     </Properties>
   </Item>
@@ -53,6 +56,32 @@ return table.freeze(Schema)
       </Item>
       <Item class="ModuleScript" referent="4">
         <Properties>
+          <string name="Name">Difficulty</string>
+          <string name="Source"><![CDATA[--!strict
+local Difficulty={}
+function Difficulty.trap(definition,stage,station)
+	local result=table.clone(definition)
+	local overrides=stage.TrapOverrides and stage.TrapOverrides[station]
+	if overrides then
+		for key,value in overrides do
+			assert(definition[key]~=nil and type(value)==type(definition[key]),"Invalid trap override "..key)
+			result[key]=value
+		end
+	end
+	local progress=(stage.Id-1)/49
+	result.Speed*=stage.Speed*(1+(station-2)*0.07)*(1+0.25*progress)
+	-- Faster late-game cycles, but retain readable warnings and a crossing window.
+	result.Safe=math.max(1.8*result.Speed,result.Safe*(1-0.2*progress))
+	result.Warning=math.max(0.75*result.Speed,result.Warning)
+	result.Active*=1+0.35*progress
+	return result
+end
+return table.freeze(Difficulty)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="5">
+        <Properties>
           <string name="Name">GameConfig</string>
           <string name="Source"><![CDATA[--!strict
 return table.freeze({
@@ -60,7 +89,7 @@ return table.freeze({
 	StageCount = 50,
 	StageHeight = 20,
 	BaseHeight = 8,
-	Radius = 32,
+	Radius = 36,
 	WalkSpeed = 16,
 	JumpPower = 50,
 	Gravity = 196.2,
@@ -79,7 +108,7 @@ return table.freeze({
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="5">
+      <Item class="ModuleScript" referent="6">
         <Properties>
           <string name="Name">MotionMath</string>
           <string name="Source"><![CDATA[--!strict
@@ -103,14 +132,17 @@ return table.freeze(Math)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="6">
+      <Item class="ModuleScript" referent="7">
         <Properties>
           <string name="Name">ProgressRules</string>
           <string name="Source"><![CDATA[--!strict
 -- No client input participates in this transition. Pure functions are tested outside Studio.
 local Rules={}
-function Rules.canCheckpoint(profile, stage, gate, elapsed)
-	return not profile.Won and stage==profile.RunStage+1 and stage<=50 and gate==2 and elapsed>=3
+function Rules.canCheckpoint(profile, stage)
+	return not profile.Won and stage==profile.RunStage+1 and stage>=1 and stage<=50
+end
+function Rules.onPad(x,y,z,width,depth)
+	return math.abs(x)<=width/2+0.75 and math.abs(z)<=depth/2+0.75 and y>=-0.5 and y<=6
 end
 function Rules.advance(profile, stage, now)
 	profile.RunStage=stage
@@ -138,7 +170,29 @@ return table.freeze(Rules)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="7">
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">RecoveryRules</string>
+          <string name="Source"><![CDATA[--!strict
+-- A completed group of five unlocks its physical catch floor for that player.
+-- Floors are below the checkpoint; enabling collision never intersects a climber.
+local Rules={Interval=5,FloorCount=9}
+function Rules.section(stage)
+	return math.clamp(math.floor(stage/Rules.Interval),0,Rules.FloorCount)
+end
+function Rules.canStandOn(section,floorIndex)
+	return floorIndex>=1 and floorIndex<=Rules.FloorCount and section>=floorIndex
+end
+function Rules.floorHeight(floorIndex)
+	return 8+floorIndex*Rules.Interval*20-10
+end
+function Rules.playerGroup(section) return "TowerPlayer_"..section end
+function Rules.floorGroup(floorIndex) return "TowerFloor_"..floorIndex end
+return table.freeze(Rules)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="9">
         <Properties>
           <string name="Name">Route</string>
           <string name="Source"><![CDATA[--!strict
@@ -161,15 +215,22 @@ local profiles = {
 function Route.point(stage, node, layout)
 	local profile = assert(profiles[layout], "Unknown layout")
 	local angle = ((stage - 1) * math.pi / 2) + node / 12 * math.pi / 2
-	local radius = 32 + profile[node + 1]
+	local radius = 36 + profile[node + 1]
 	return radius * math.cos(angle), 8 + (stage - 1) * 20 + node * 20 / 12, radius * math.sin(angle)
 end
 function Route.width(stage, node, layout)
-	if node % 4 == 0 then return 8 end
-	if layout == "needles" then return 2.8 end
-	if layout == "beams" then return 3.3 end
-	if layout == "islands" then return 4.2 end
-	return math.max(4.5, 7 - stage * 0.045)
+	if node % 4 == 0 then return 6 end
+	if layout == "needles" then return 2.2 end
+	if layout == "beams" then return 2.6 end
+	if layout == "islands" then return 3.1 end
+	return math.max(2.8,4.8-stage*0.04)
+end
+function Route.depth(stage,node)
+	if node%4==0 then return 5 end
+	return math.max(2.8,3.8-stage*0.02)
+end
+function Route.carrierSize(stage)
+	return math.max(3.8,4.8-stage*0.02),math.max(3.2,3.8-stage*0.012)
 end
 function Route.validate(definitions)
 	assert(#definitions == 50, "Exactly 50 stages required")
@@ -199,7 +260,7 @@ return table.freeze(Route)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="10">
         <Properties>
           <string name="Name">StageDefinitions</string>
           <string name="Source"><![CDATA[--!strict
@@ -270,7 +331,7 @@ return table.freeze(definitions)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="11">
         <Properties>
           <string name="Name">TrapDefinitions</string>
           <string name="Source"><![CDATA[--!strict
@@ -312,7 +373,7 @@ return table.freeze(definitions)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="12">
         <Properties>
           <string name="Name">TrapMotion</string>
           <string name="Source"><![CDATA[--!strict
@@ -360,15 +421,15 @@ return Motion
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="11">
+  <Item class="ServerScriptService" referent="13">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="12">
+    <Item class="Folder" referent="14">
       <Properties>
         <string name="Name">TowerServer</string>
       </Properties>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">BuildUtil</string>
           <string name="Source"><![CDATA[--!strict
@@ -418,15 +479,17 @@ return Util
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">CheckpointService</string>
           <string name="Source"><![CDATA[--!strict
 local RunService=game:GetService("RunService")
 local Shared=game:GetService("ReplicatedStorage").Shared
 local Rules=require(Shared.ProgressRules)
+local Recovery=require(script.Parent.RecoveryService)
 local Service={}
 function Service.publish(player,p)
+	Recovery.update(player,p)
 	player:SetAttribute("RunStage",p.RunStage)
 	player:SetAttribute("MaxStage",p.MaxStage)
 	player:SetAttribute("Deaths",p.Deaths)
@@ -467,9 +530,10 @@ function Service.start(tower,data,remotes)
 			if gate and inside(gate,root.Position,Vector3.new(4.5,3.5,3.5)) then p.Gate+=1 end
 			local checkpoint=checkpoints[stage]
 			local relative=checkpoint.CFrame:PointToObjectSpace(root.Position)
-			local touching=math.abs(relative.X)<4.5 and math.abs(relative.Z)<4 and relative.Y>=0 and relative.Y<=6
-			if touching and Rules.canCheckpoint(p,stage,p.Gate,os.clock()-p.StageEntered) then
+			local touching=Rules.onPad(relative.X,relative.Y,relative.Z,checkpoint.Size.X,checkpoint.Size.Z)
+			if touching and Rules.canCheckpoint(p,stage) then
 				Rules.advance(p,stage,os.clock())
+				player.RespawnLocation=checkpoint
 				if p.Won then
 					p.FinishTime=workspace:GetServerTimeNow()-p.StartedAt
 					if p.FullRun then p.BestTime=math.min(p.BestTime or math.huge,p.FinishTime) end
@@ -490,7 +554,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Script" referent="15">
+      <Item class="Script" referent="17">
         <Properties>
           <string name="Name">GameBootstrap</string>
           <token name="RunContext">0</token>
@@ -533,6 +597,8 @@ local function join(player)
 end
 Players.PlayerAdded:Connect(join)
 Players.PlayerRemoving:Connect(function(player)
+	local profile=Data.Profiles[player]
+	if profile and profile.CollisionConnection then profile.CollisionConnection:Disconnect() end
 	if connections[player] then connections[player]:Disconnect(); connections[player]=nil end
 	Data.save(player,os.clock()+15)
 	Data.Profiles[player]=nil
@@ -543,6 +609,7 @@ remotes.PlayAgain.OnServerEvent:Connect(function(player)
 	local p=Data.Profiles[player]
 	if not p or p.Spawning or not Rules.replay(p,workspace:GetServerTimeNow(),os.clock()) then return end
 	Checkpoints.publish(player,p)
+	player.RespawnLocation=tower.Foundation.LobbySpawn
 	local character=player.Character
 	local humanoid=character and character:FindFirstChildOfClass("Humanoid")
 	if character and humanoid and humanoid.Health>0 then
@@ -555,7 +622,7 @@ print("[Tower] Server initialized. Characters spawn only after deterministic gen
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">PlayerDataService</string>
           <string name="Source"><![CDATA[--!strict
@@ -659,20 +726,102 @@ return Data
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="17">
+      <Item class="ModuleScript" referent="19">
+        <Properties>
+          <string name="Name">RecoveryService</string>
+          <string name="Source"><![CDATA[--!strict
+local PhysicsService=game:GetService("PhysicsService")
+local Shared=game:GetService("ReplicatedStorage").Shared
+local Rules=require(Shared.RecoveryRules)
+local Route=require(Shared.Route)
+local Config=require(Shared.GameConfig)
+local Definitions=require(Shared.StageDefinitions)
+local U=require(script.Parent.BuildUtil)
+local Recovery={}
+function Recovery.configure()
+	for section=0,Rules.FloorCount do
+		local name=Rules.playerGroup(section)
+		if not PhysicsService:IsCollisionGroupRegistered(name) then PhysicsService:RegisterCollisionGroup(name) end
+	end
+	for floor=1,Rules.FloorCount do
+		local name=Rules.floorGroup(floor)
+		if not PhysicsService:IsCollisionGroupRegistered(name) then PhysicsService:RegisterCollisionGroup(name) end
+		PhysicsService:CollisionGroupSetCollidable(name,"Default",false)
+		for section=0,Rules.FloorCount do
+			PhysicsService:CollisionGroupSetCollidable(name,Rules.playerGroup(section),Rules.canStandOn(section,floor))
+		end
+	end
+end
+function Recovery.update(player,profile)
+	local section=Rules.section(profile.RunStage)
+	player:SetAttribute("RecoveryStage",section*Rules.Interval)
+	local character=player.Character
+	if not character or character:GetAttribute("TowerSection")==section then return end
+	character:SetAttribute("TowerSection",section)
+	for _,part in character:GetDescendants() do
+		if part:IsA("BasePart") then part.CollisionGroup=Rules.playerGroup(section) end
+	end
+end
+function Recovery.bindCharacter(player,profile,character)
+	if profile.CollisionConnection then profile.CollisionConnection:Disconnect() end
+	Recovery.update(player,profile)
+	profile.CollisionConnection=character.DescendantAdded:Connect(function(part)
+		if part:IsA("BasePart") then part.CollisionGroup=Rules.playerGroup(Rules.section(profile.RunStage)) end
+	end)
+end
+function Recovery.build(tower)
+	for floor=1,Rules.FloorCount do
+		local completed=floor*Rules.Interval
+		local height=Rules.floorHeight(floor)
+		local model=Instance.new("Model")
+		model.Name="Recovery_"..completed
+		model:SetAttribute("UnlockStage",completed)
+		model:SetAttribute("FloorHeight",height)
+		model.Parent=tower.RecoveryFloors
+		local accent=Config.ZoneColors[math.ceil(completed/10)]
+		local deck=U.part(model,"CatchDeck",Vector3.new(108,1.2,108),CFrame.new(0,height-0.6,0),Color3.fromRGB(104,116,132),Enum.Material.DiamondPlate)
+		for _,edge in {-53,53} do
+			U.part(model,"SafetyRail",Vector3.new(1,3,108),CFrame.new(edge,height+1.5,0),accent)
+			U.part(model,"SafetyRail",Vector3.new(106,3,1),CFrame.new(0,height+1.5,edge),accent)
+		end
+		-- Rejoin node 8 of the completed stage: only 3.33 studs above the floor.
+		-- Two broad steps approach it radially, without teleporting a fallen player.
+		local x,y,z=Route.point(completed,8,Definitions[completed].Layout)
+		local outward=Vector3.new(x,0,z).Unit
+		local endpoint=Vector3.new(x,y,z)
+		for step=1,2 do
+			local top=height+(y-height)*step/3
+			local position=endpoint+outward*((3-step)*4)
+			U.part(model,"ReturnStep_"..step,Vector3.new(5,1,5),CFrame.new(position.X,top-0.5,position.Z),accent)
+		end
+		local sign=U.part(model,"ReturnMarker",Vector3.new(1,0.15,1),CFrame.new(x,height+0.15,z)+outward*10,accent,Enum.Material.Neon,false)
+		U.label(sign,string.format("SAFETY FLOOR · %d–%d\n⇧ STAIRS → CHECKPOINT %d",completed+1,math.min(completed+5,50),completed),accent)
+		U.label(deck,string.format("RECOVERY %d\nFALLS STOP HERE AFTER CHECKPOINT %d",completed,completed),accent)
+		for _,part in model:GetDescendants() do
+			if part:IsA("BasePart") then part.CollisionGroup=Rules.floorGroup(floor) end
+		end
+	end
+end
+return Recovery
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">RespawnService</string>
           <string name="Source"><![CDATA[--!strict
 local Players=game:GetService("Players")
 local Config=require(game:GetService("ReplicatedStorage").Shared.GameConfig)
+local Recovery=require(script.Parent.RecoveryService)
 local Respawn={}
 function Respawn.destination(tower,stage)
-	if stage==0 then return CFrame.new(32,12,0) end
+	if stage==0 then return CFrame.new(36,12,0) end
 	return tower.Checkpoints:FindFirstChild("Checkpoint_"..stage):GetAttribute("Spawn")
 end
 function Respawn.spawn(player,profile,tower)
 	if profile.Spawning or not player.Parent then return end
 	profile.Spawning=true
+	player.RespawnLocation=if profile.RunStage==0 then tower.Foundation.LobbySpawn else tower.Checkpoints:FindFirstChild("Checkpoint_"..profile.RunStage)
 	local ok,err=pcall(function() player:LoadCharacterAsync() end)
 	profile.Spawning=false
 	if not ok and player.Parent then
@@ -682,6 +831,7 @@ function Respawn.spawn(player,profile,tower)
 end
 function Respawn.bind(player,profile,tower,publish)
 	local connection=player.CharacterAdded:Connect(function(character)
+		Recovery.bindCharacter(player,profile,character)
 		local humanoid=character:WaitForChild("Humanoid",15)
 		local root=character:WaitForChild("HumanoidRootPart",15)
 		if not humanoid or not root or not player.Parent then return end
@@ -690,7 +840,9 @@ function Respawn.bind(player,profile,tower,publish)
 		humanoid.JumpPower=Config.JumpPower
 		profile.Gate=0
 		profile.StageEntered=os.clock()
-		character:PivotTo(Respawn.destination(tower,profile.RunStage))
+		root.AssemblyLinearVelocity=Vector3.zero
+		root.AssemblyAngularVelocity=Vector3.zero
+		root.CFrame=Respawn.destination(tower,profile.RunStage)
 		humanoid.Died:Once(function()
 			profile.Deaths+=1
 			publish(player,profile)
@@ -705,7 +857,7 @@ return Respawn
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">StageBuilder</string>
           <string name="Source"><![CDATA[--!strict
@@ -738,8 +890,8 @@ function Builder.build(tower, definition)
 		local moving = kind=="move" or kind=="lift" or kind=="orbit" or kind=="gear" or kind=="fade" or kind=="timer" or kind=="conveyor"
 		local width = Route.width(id,node,definition.Layout)
 		if not moving then
-			local p = U.part(stage,"Landing_"..node,Vector3.new(width,1,if node%4==0 then 7 else 5.2),cf*CFrame.new(0,-0.5,0))
-			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,3.8),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
+			local p = U.part(stage,"Landing_"..node,Vector3.new(width,1,Route.depth(id,node)),cf*CFrame.new(0,-0.5,0))
+			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,Route.depth(id,node)-0.3),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
 			if node%4==0 then
 				-- Side rails leave both route ends open and never close the fall shafts.
 				for side=-1,1,2 do
@@ -761,7 +913,21 @@ function Builder.build(tower, definition)
 			gate:SetAttribute("Order",node/4)
 		end
 		if node==12 then
-			local cp = U.part(tower.Checkpoints,"Checkpoint_"..id,Vector3.new(7,0.2,6),cf*CFrame.new(0,0.12,0),accent,Enum.Material.Neon,false)
+			local cp=Instance.new("SpawnLocation")
+			cp.Name="Checkpoint_"..id
+			cp.Size=Vector3.new(5,0.2,4)
+			cp.CFrame=cf*CFrame.new(0,0.12,0)
+			cp.Color=accent
+			cp.Material=Enum.Material.Neon
+			cp.Anchored=true
+			cp.CanCollide=false
+			cp.CanQuery=false
+			cp.CanTouch=true
+			cp.Neutral=true
+			cp.Enabled=true
+			cp.Duration=0
+			cp.AllowTeamChangeOnTouch=false
+			cp.Parent=tower.Checkpoints
 			cp:SetAttribute("Stage",id)
 			cp:SetAttribute("Spawn",cf*CFrame.new(0,4,0))
 			U.label(cp,string.format("CHECKPOINT %02d / 50\n%s",id,definition.Name),accent)
@@ -780,7 +946,7 @@ return Builder
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="19">
+      <Item class="ModuleScript" referent="22">
         <Properties>
           <string name="Name">TowerGenerator</string>
           <string name="Source"><![CDATA[--!strict
@@ -791,8 +957,15 @@ local Definitions = require(Shared.StageDefinitions)
 local Route = require(Shared.Route)
 local U = require(script.Parent.BuildUtil)
 local Builder = require(script.Parent.StageBuilder)
+local Recovery=require(script.Parent.RecoveryService)
 local Generator = {}
 function Generator.generate()
+	Recovery.configure()
+	Lighting.ClockTime=13.5
+	Lighting.Brightness=3.2
+	Lighting.Ambient=Color3.fromRGB(166,176,194)
+	Lighting.OutdoorAmbient=Color3.fromRGB(194,204,219)
+	Lighting.GlobalShadows=false
 	local existing=workspace:FindFirstChild("GeneratedTower")
 	if existing then
 		assert(existing:GetAttribute("Ready"),"Previous incomplete tower exists; stop Play before rebuilding")
@@ -803,23 +976,23 @@ function Generator.generate()
 	tower.Name="GeneratedTower"
 	tower:SetAttribute("Ready",false)
 	-- Parent only when the complete map is ready; auto character loading is disabled by bootstrap.
-	for _,name in {"Foundation","StructuralSupports","Stages","Checkpoints","KillZones","FinishArea","RouteGates"} do U.folder(tower,name) end
+	for _,name in {"Foundation","StructuralSupports","Stages","Checkpoints","KillZones","FinishArea","RouteGates","RecoveryFloors"} do U.folder(tower,name) end
 	U.part(tower.Foundation,"Foundation",Vector3.new(108,4,108),CFrame.new(0,0,0),Color3.fromRGB(35,40,50),Enum.Material.Concrete)
-	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(32,5,0))
-	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(32,3,-15))
-	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(32,4,-11))
+	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(36,5,0))
+	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(36,3,-15))
+	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(36,4,-11))
 	local spawn=Instance.new("SpawnLocation")
 	spawn.Name="LobbySpawn"
 	spawn.Size=Vector3.new(8,1,8)
-	spawn.CFrame=CFrame.new(32,8,0)
+	spawn.CFrame=CFrame.new(36,8,0)
 	spawn.Anchored=true
 	spawn.Neutral=true
 	spawn.Duration=0
 	spawn.Transparency=1
 	spawn.CanCollide=false
-	spawn.Enabled=false -- RespawnService positions characters explicitly, not the engine's random spawn selection.
+	spawn.Enabled=true -- Each player explicitly selects this or a completed checkpoint as RespawnLocation.
 	spawn.Parent=tower.Foundation
-	U.label(spawn,"MEGA MECHANICAL TOWER\n50 STAGES · FALLS ARE REAL",Config.ZoneColors[1])
+	U.label(spawn,"MEGA MECHANICAL TOWER\n50 STAGES · SAFETY FLOORS EVERY 5",Config.ZoneColors[1])
 	for _,x in {-47,47} do for _,z in {-47,47} do
 		U.part(tower.StructuralSupports,"MainColumn",Vector3.new(3,1010,3),CFrame.new(x,503,z))
 		U.part(tower.StructuralSupports,"ColumnLight",Vector3.new(0.25,1008,0.25),CFrame.new(x-1.6,503,z-1.6),Config.ZoneColors[5],Enum.Material.Neon,false)
@@ -838,6 +1011,7 @@ function Generator.generate()
 		if humanoid then humanoid.Health=0 end
 	end)
 	for _,definition in Definitions do Builder.build(tower,definition) end
+	Recovery.build(tower)
 	local finish=tower.Checkpoints:FindFirstChild("Checkpoint_50")
 	local finishCF=finish.CFrame*CFrame.new(0,-0.12,-11)
 	U.part(tower.FinishArea,"CrownDeck",Vector3.new(26,1,22),finishCF*CFrame.new(0,-0.5,0),Color3.fromRGB(26,30,42))
@@ -863,9 +1037,9 @@ function Generator.generate()
 		if not Lighting:FindFirstChild("Tower"..item) then
 			local effect=Instance.new(item)
 			effect.Name="Tower"..item
-			if item=="Atmosphere" then effect.Density=0.18; effect.Offset=0.15
+			if item=="Atmosphere" then effect.Density=0.07; effect.Offset=0.15
 			elseif item=="BloomEffect" then effect.Intensity=0.35; effect.Size=24; effect.Threshold=1.4
-			else effect.Contrast=0.08; effect.Saturation=-0.05 end
+			else effect.Contrast=0.02; effect.Saturation=0.06 end
 			effect.Parent=Lighting
 		end
 	end
@@ -889,7 +1063,7 @@ return Generator
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">TrapController</string>
           <string name="Source"><![CDATA[--!strict
@@ -973,32 +1147,27 @@ return Controller
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="21">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">TrapFactory</string>
           <string name="Source"><![CDATA[--!strict
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Definitions = require(Shared.TrapDefinitions)
 local U = require(script.Parent.BuildUtil)
+local Difficulty=require(Shared.Difficulty)
+local Route=require(Shared.Route)
 local Factory = {}
 local metal = Color3.fromRGB(75,83,104)
 local danger = Color3.fromRGB(255,75,70)
 function Factory.create(parent, kind, surface, stage, station)
-	local definition = table.clone(assert(Definitions[kind], "Unknown trap " .. kind))
-	local overrides=stage.TrapOverrides and stage.TrapOverrides[station]
-	if overrides then
-		for key,value in overrides do
-			assert(definition[key]~=nil and type(value)==type(definition[key]),"Invalid trap override "..key)
-			definition[key]=value
-		end
-	end
+	local definition=Difficulty.trap(assert(Definitions[kind],"Unknown trap "..kind),stage,station)
 	assert(definition.Size>0 and definition.Speed>0 and definition.Safe>0 and definition.Warning>0 and definition.Active>0)
 	local model = Instance.new("Model")
 	model.Name = kind .. "_" .. station
 	model:SetAttribute("Kind",kind)
 	model:SetAttribute("Stage",stage.Id)
 	for key,value in definition do model:SetAttribute(key,value) end
-	model:SetAttribute("Speed", definition.Speed * stage.Speed * (1 + (station-2)*0.07))
+	model:SetAttribute("Speed", definition.Speed)
 	-- Some rooms share a clock; others have clearly staggered warnings.
 	model:SetAttribute("Phase", if stage.Id == 30 or stage.Id == 47 then stage.Phase else stage.Phase + station * 1.35)
 	local direction=Vector3.new(definition.DirectionX,definition.DirectionY,definition.DirectionZ)
@@ -1023,16 +1192,17 @@ function Factory.create(parent, kind, surface, stage, station)
 		return p
 	end
 	if kind == "move" or kind == "lift" or kind == "orbit" or kind == "fade" or kind == "timer" or kind == "conveyor" then
-		piece("Deck",Vector3.new(7,1,6),CFrame.new(0,-0.5,0),false,true,true)
+		local deckWidth,deckDepth=Route.carrierSize(stage.Id)
+		piece("Deck",Vector3.new(deckWidth,1,deckDepth),CFrame.new(0,-0.5,0),false,true,true)
 		for x=-1,1,2 do
-			piece("EdgeLight",Vector3.new(0.15,0.08,5.8),CFrame.new(x*3.3,0.04,0),false,false,false).Color = Color3.fromRGB(70,220,255)
+			piece("EdgeLight",Vector3.new(0.15,0.08,deckDepth-0.2),CFrame.new(x*(deckWidth/2-0.15),0.04,0),false,false,false).Color = Color3.fromRGB(70,220,255)
 		end
 		if kind == "lift" then
 			piece("MovingColumn",Vector3.new(2.8,6,2.8),CFrame.new(0,-4,0),false,false,false)
 		end
 		if kind == "conveyor" then
-			for z=-2,2 do
-				local stripe = piece("BeltMark",Vector3.new(5,0.04,0.16),CFrame.new(0,0.05,z),false,false,false)
+			for z=-1,1 do
+				local stripe = piece("BeltMark",Vector3.new(deckWidth-0.4,0.04,0.16),CFrame.new(0,0.05,z),false,false,false)
 				stripe.Color = Color3.fromRGB(255,195,60)
 			end
 			U.label(model.Deck, "⇧ BELT ⇧",Color3.fromRGB(255,195,60))
@@ -1098,15 +1268,15 @@ return Factory
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="22">
+  <Item class="ServerStorage" referent="25">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
-    <Item class="Folder" referent="23">
+    <Item class="Folder" referent="26">
       <Properties>
         <string name="Name">TowerTests</string>
       </Properties>
-      <Item class="ModuleScript" referent="24">
+      <Item class="ModuleScript" referent="27">
         <Properties>
           <string name="Name">Smoke</string>
           <string name="Source"><![CDATA[--!strict
@@ -1117,7 +1287,19 @@ function Test.run(tower)
 	local Definitions=require(Shared.StageDefinitions)
 	local Route=require(Shared.Route)
 	local Motion=require(Shared.TrapMotion)
+	local Recovery=require(Shared.RecoveryRules)
+	local PhysicsService=game:GetService("PhysicsService")
 	assert(Route.validate(Definitions))
+	assert(#tower.RecoveryFloors:GetChildren()==9,"Missing catch floors")
+	for floor=1,9 do
+		local model=tower.RecoveryFloors:FindFirstChild("Recovery_"..floor*5)
+		assert(model and model.CatchDeck.Size.X==108 and model.CatchDeck.Size.Z==108)
+		assert(math.abs(model.CatchDeck.Position.Y+model.CatchDeck.Size.Y/2-Recovery.floorHeight(floor))<0.01)
+		for section=0,9 do
+			assert(PhysicsService:CollisionGroupsAreCollidable(Recovery.floorGroup(floor),Recovery.playerGroup(section))==Recovery.canStandOn(section,floor),"Incorrect recovery collision matrix")
+		end
+	end
+	assert(game:GetService("Lighting").ClockTime==13.5,"Daylight settings missing")
 	assert(tower:GetAttribute("Ready"))
 	assert(#tower.Stages:GetChildren()==50)
 	assert(#tower.Checkpoints:GetChildren()==50)
@@ -1133,8 +1315,8 @@ function Test.run(tower)
 		local active=model:GetAttribute("Active")
 		local speed=model:GetAttribute("Speed")
 		local phase=model:GetAttribute("Phase")
-		assert(speed>0 and warning/speed>=0.7,"Warning window too short")
-		assert(safe/speed>=2.5,"Safe window too short")
+		assert(speed>0 and warning/speed>=0.75-0.00001,"Warning window too short")
+		assert(safe/speed>=1.8-0.00001,"Safe window too short")
 		for _,sample in {0.1,safe+warning*0.5,safe+warning+active*0.5} do
 			local time=(sample-phase)/speed
 			local first,state=Motion.evaluate(model,time)
@@ -1153,12 +1335,13 @@ function Test.run(tower)
 	for n=1,50 do
 		local checkpoint=tower.Checkpoints:FindFirstChild("Checkpoint_"..n)
 		assert(checkpoint:GetAttribute("Stage")==n)
+		assert(checkpoint:IsA("SpawnLocation") and checkpoint.Enabled and checkpoint.CanTouch,"Broken respawn checkpoint")
 		local spawn=checkpoint:GetAttribute("Spawn")
 		assert(spawn.Position.Y>checkpoint.Position.Y+2)
 		local stage=tower.Stages:FindFirstChild(string.format("Stage_%02d_%s",n,Definitions[n].Name))
 		assert(stage and stage:GetAttribute("StageId")==n)
 	end
-	print("[StudioSmoke] PASS: generated hierarchy, 50 checkpoints, 150 mechanisms, timing and deterministic poses. Physics and persistence still need playtesting.")
+	print("[StudioSmoke] PASS: generated hierarchy, daylight, 9 recovery floors, collision matrix, 50 respawn checkpoints, 150 mechanisms, timing and deterministic poses. Physics and persistence still need playtesting.")
 	return true
 end
 return Test
@@ -1167,7 +1350,7 @@ return Test
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="25">
+  <Item class="StarterPlayer" referent="28">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <token name="CameraMode">0</token>
@@ -1175,15 +1358,15 @@ return Test
       <bool name="CharacterUseJumpPower">true</bool>
       <float name="CharacterWalkSpeed">16</float>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="26">
+    <Item class="StarterPlayerScripts" referent="29">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="27">
+      <Item class="Folder" referent="30">
         <Properties>
           <string name="Name">TowerClient</string>
         </Properties>
-        <Item class="LocalScript" referent="28">
+        <Item class="LocalScript" referent="31">
           <Properties>
             <string name="Name">EffectsController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1244,7 +1427,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="29">
+        <Item class="LocalScript" referent="32">
           <Properties>
             <string name="Name">HUDController</string>
             <string name="Source"><![CDATA[--!strict
@@ -1378,8 +1561,8 @@ local function update()
 	progressTween=TweenService:Create(fill,TweenInfo.new(0.4,Enum.EasingStyle.Quad),{Size=UDim2.fromScale(stage/50,1)})
 	progressTween:Play()
 	status.Text=if not player:GetAttribute("DataLoaded") then "Loading progress…"
-		elseif not player:GetAttribute("Persistence") then "STUDIO · Session only · DataStore disabled"
-		elseif player:GetAttribute("SavePending") then "Saving progress…" else "Progress saved · Falls do not reset you"
+		elseif not player:GetAttribute("Persistence") then string.format("Respawn: %d · Safety floor: %d · Studio session",stage,player:GetAttribute("RecoveryStage") or 0)
+		elseif player:GetAttribute("SavePending") then "Saving progress…" else string.format("Saved · Respawn: %d · Safety floor: %d",stage,player:GetAttribute("RecoveryStage") or 0)
 	victory.Visible=player:GetAttribute("Won")==true
 	local finishTime=player:GetAttribute("FinishTime")
 	winInfo.Text=if finishTime then "50 / 50 · MASTER MECHANIC\n"..(if player:GetAttribute("FullRun") then "Full run: " else "Session time: ")..formatTime(finishTime).."\nMaximum progress is preserved."
@@ -1389,7 +1572,7 @@ local function update()
 		cp.Color=if cp:GetAttribute("Stage")<=stage then Color3.fromRGB(65,255,155) else Config.ZoneColors[math.ceil(cp:GetAttribute("Stage")/10)]
 	end
 end
-for _,attribute in {"DataLoaded","RunStage","MaxStage","Won","Completed","SavePending","Persistence","FinishTime","Deaths"} do
+for _,attribute in {"DataLoaded","RunStage","MaxStage","Won","Completed","SavePending","Persistence","FinishTime","Deaths","RecoveryStage"} do
 	player:GetAttributeChangedSignal(attribute):Connect(update)
 end
 local function resize()
@@ -1422,7 +1605,7 @@ resize()
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="30">
+        <Item class="LocalScript" referent="33">
           <Properties>
             <string name="Name">MechanismClient</string>
             <string name="Source"><![CDATA[--!strict
@@ -1480,6 +1663,7 @@ RunService.PreSimulation:Connect(function(dt)
 	end
 	if humanoid.Health<=0 or humanoid:GetState()==Enum.HumanoidStateType.Jumping then return end
 	rayParams.FilterDescendantsInstances={character}
+	rayParams.CollisionGroup=root.CollisionGroup
 	local distance=humanoid.HipHeight+root.Size.Y/2+0.65
 	local hit=workspace:Raycast(root.Position,Vector3.new(0,-distance,0),rayParams)
 	if not hit or hit.Normal.Y<0.5 or not hit.Instance:GetAttribute("Carry") then return end
@@ -1497,10 +1681,35 @@ end)
 ]]></string>
           </Properties>
         </Item>
+        <Item class="LocalScript" referent="34">
+          <Properties>
+            <string name="Name">RecoveryController</string>
+            <string name="Source"><![CDATA[--!strict
+local Players=game:GetService("Players")
+local player=Players.LocalPlayer
+local floors=workspace:WaitForChild("GeneratedTower"):WaitForChild("RecoveryFloors")
+local function update()
+	local unlocked=player:GetAttribute("RecoveryStage") or 0
+	for _,model in floors:GetChildren() do
+		local active=unlocked>=(model:GetAttribute("UnlockStage") or math.huge)
+		for _,object in model:GetDescendants() do
+			if object:IsA("BasePart") then
+				-- Locked floors are pass-through for this character and shown as ghosts.
+				object.LocalTransparencyModifier=if active then 0 else 0.94
+			elseif object:IsA("BillboardGui") then object.Enabled=active end
+		end
+	end
+end
+player:GetAttributeChangedSignal("RecoveryStage"):Connect(update)
+floors.DescendantAdded:Connect(update)
+update()
+]]></string>
+          </Properties>
+        </Item>
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="31">
+  <Item class="Workspace" referent="35">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="FallenPartsDestroyHeight">-150</float>

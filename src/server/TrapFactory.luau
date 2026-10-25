@@ -2,25 +2,20 @@
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Definitions = require(Shared.TrapDefinitions)
 local U = require(script.Parent.BuildUtil)
+local Difficulty=require(Shared.Difficulty)
+local Route=require(Shared.Route)
 local Factory = {}
 local metal = Color3.fromRGB(75,83,104)
 local danger = Color3.fromRGB(255,75,70)
 function Factory.create(parent, kind, surface, stage, station)
-	local definition = table.clone(assert(Definitions[kind], "Unknown trap " .. kind))
-	local overrides=stage.TrapOverrides and stage.TrapOverrides[station]
-	if overrides then
-		for key,value in overrides do
-			assert(definition[key]~=nil and type(value)==type(definition[key]),"Invalid trap override "..key)
-			definition[key]=value
-		end
-	end
+	local definition=Difficulty.trap(assert(Definitions[kind],"Unknown trap "..kind),stage,station)
 	assert(definition.Size>0 and definition.Speed>0 and definition.Safe>0 and definition.Warning>0 and definition.Active>0)
 	local model = Instance.new("Model")
 	model.Name = kind .. "_" .. station
 	model:SetAttribute("Kind",kind)
 	model:SetAttribute("Stage",stage.Id)
 	for key,value in definition do model:SetAttribute(key,value) end
-	model:SetAttribute("Speed", definition.Speed * stage.Speed * (1 + (station-2)*0.07))
+	model:SetAttribute("Speed", definition.Speed)
 	-- Some rooms share a clock; others have clearly staggered warnings.
 	model:SetAttribute("Phase", if stage.Id == 30 or stage.Id == 47 then stage.Phase else stage.Phase + station * 1.35)
 	local direction=Vector3.new(definition.DirectionX,definition.DirectionY,definition.DirectionZ)
@@ -45,16 +40,17 @@ function Factory.create(parent, kind, surface, stage, station)
 		return p
 	end
 	if kind == "move" or kind == "lift" or kind == "orbit" or kind == "fade" or kind == "timer" or kind == "conveyor" then
-		piece("Deck",Vector3.new(7,1,6),CFrame.new(0,-0.5,0),false,true,true)
+		local deckWidth,deckDepth=Route.carrierSize(stage.Id)
+		piece("Deck",Vector3.new(deckWidth,1,deckDepth),CFrame.new(0,-0.5,0),false,true,true)
 		for x=-1,1,2 do
-			piece("EdgeLight",Vector3.new(0.15,0.08,5.8),CFrame.new(x*3.3,0.04,0),false,false,false).Color = Color3.fromRGB(70,220,255)
+			piece("EdgeLight",Vector3.new(0.15,0.08,deckDepth-0.2),CFrame.new(x*(deckWidth/2-0.15),0.04,0),false,false,false).Color = Color3.fromRGB(70,220,255)
 		end
 		if kind == "lift" then
 			piece("MovingColumn",Vector3.new(2.8,6,2.8),CFrame.new(0,-4,0),false,false,false)
 		end
 		if kind == "conveyor" then
-			for z=-2,2 do
-				local stripe = piece("BeltMark",Vector3.new(5,0.04,0.16),CFrame.new(0,0.05,z),false,false,false)
+			for z=-1,1 do
+				local stripe = piece("BeltMark",Vector3.new(deckWidth-0.4,0.04,0.16),CFrame.new(0,0.05,z),false,false,false)
 				stripe.Color = Color3.fromRGB(255,195,60)
 			end
 			U.label(model.Deck, "⇧ BELT ⇧",Color3.fromRGB(255,195,60))

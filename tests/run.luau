@@ -5,6 +5,8 @@ local Rules=require("../src/shared/ProgressRules")
 local Schema=require("../src/shared/DataSchema")
 local Traps=require("../src/shared/TrapDefinitions")
 local MotionMath=require("../src/shared/MotionMath")
+local Recovery=require("../src/shared/RecoveryRules")
+local Difficulty=require("../src/shared/Difficulty")
 local checks=0
 local function check(condition,message)
 	assert(condition,message)
@@ -18,7 +20,10 @@ for i,stage in Stages do
 	check(not names[stage.Name],"Duplicate stage name")
 	names[stage.Name]=true
 	check(#stage.Traps==3,"Three real mechanisms per floor")
-	for _,kind in stage.Traps do
+	for station,kind in stage.Traps do
+		local balanced=Difficulty.trap(Traps[kind],stage,station)
+		check(balanced.Safe/balanced.Speed>=1.8-0.00001,"Insufficient safe window")
+		check(balanced.Warning/balanced.Speed>=0.75-0.00001,"Insufficient warning")
 		check(Traps[kind]~=nil,"Missing mechanism definition")
 		used[kind]=true
 	end
@@ -31,7 +36,7 @@ for i,stage in Stages do
 		local rise=y-py
 		local flight=(50+math.sqrt(50^2-2*196.2*rise))/196.2
 		check(distance<16*flight,"Center-to-center leap exceeds ballistic range")
-		check(Route.width(i,n,stage.Layout)>=2.8,"Platform too narrow")
+		check(Route.width(i,n,stage.Layout)>=2.2,"Platform too narrow")
 	end
 end
 for name in Traps do check(used[name],"Unused mechanism "..name) end
@@ -50,7 +55,7 @@ for name,definition in Traps do
 end
 for i,stage in Stages do
 	for station,kind in stage.Traps do
-		local definition=Traps[kind]
+		local definition=Difficulty.trap(Traps[kind],stage,station)
 		local mode=definition.Motion
 		if mode~="slide" and mode~="lift" and mode~="orbit" then continue end
 		local node=station*4-2
@@ -78,8 +83,8 @@ end
 local p={RunStage=0,MaxStage=0,Won=false,Completed=false,Gate=0,LastReplay=-10}
 for n=1,50 do
 	check(not Rules.canCheckpoint(p,n+1,2,10),"Skipped checkpoint accepted")
-	check(not Rules.canCheckpoint(p,n,1,10),"Missing route gate accepted")
-	check(not Rules.canCheckpoint(p,n,2,2.9),"Impossible instant completion accepted")
+	check(Rules.canCheckpoint(p,n),"A legitimate pad must work even when a jump bypassed hidden gates")
+	check(not Rules.canCheckpoint(p,0),"Invalid checkpoint accepted")
 	check(Rules.canCheckpoint(p,n,2,10),"Ordered checkpoint refused")
 	Rules.advance(p,n,n*10)
 	check(p.MaxStage==n and p.RunStage==n,"Progress failed")
@@ -91,6 +96,34 @@ check(p.RunStage==0 and p.MaxStage==50 and p.Completed and not p.Won,"Replay era
 check(not Rules.replay(p,2001,1001),"Replay remotely spammed")
 Rules.advance(p,1,1010)
 check(p.MaxStage==50 and p.RunStage==1,"Replay reduced maximum")
+-- Regression: death is independent of persistence and uses the current run checkpoint.
+local survivor={RunStage=0,MaxStage=0,Won=false,Completed=false,Gate=0,LastReplay=-10}
+for stage=1,17 do Rules.advance(survivor,stage,stage*10) end
+check(survivor.RunStage==17,"Death destination must retain checkpoint 17")
+check(Recovery.section(survivor.RunStage)==3,"Stage 17 must unlock floor 15")
+for stage=0,50 do
+	local section=Recovery.section(stage)
+	for floor=1,9 do
+		check(Recovery.canStandOn(section,floor)==(stage>=floor*5),"Incorrect per-player floor collision")
+		if Recovery.canStandOn(section,floor) then
+			local _,checkpointY=Route.point(stage,12,Stages[math.max(stage,1)].Layout)
+			check(Recovery.floorHeight(floor)<checkpointY-6,"Enabling floor traps a checkpoint occupant")
+		end
+	end
+end
+check(Recovery.section(0)==0 and Recovery.section(50)==9,"Recovery bounds")
+check(Recovery.floorHeight(1)==98 and Recovery.floorHeight(9)==898,"Recovery heights")
+check(Rules.onPad(0,3,0,5,4),"Standing on a pad must activate")
+check(Rules.onPad(3.1,3,0,5,4),"Edge contact lost")
+check(not Rules.onPad(5,3,0,5,4),"Distant checkpoint granted")
+check(not Rules.onPad(0,10,0,5,4),"Flying overhead granted checkpoint")
+check(not Rules.onPad(0,-2,0,5,4),"Player below pad granted checkpoint")
+local starter=Difficulty.trap(Traps.rotor,Stages[1],2)
+local final=Difficulty.trap(Traps.rotor,Stages[49],2)
+check(final.Speed>starter.Speed*1.5,"Final mechanisms must be harder")
+check(Route.width(49,3,"arc")<Route.width(1,3,"arc"),"Late platforms not narrower")
+check(Route.depth(49,3)<3 and Route.depth(1,3)<4,"Overlapping easy walkways returned")
+check(Rules.replay(survivor,2000,2000)==false,"Replay before victory accepted")
 local merged=Schema.merge({MaxStage=30,BestTime=500},{MaxStage=12,BestTime=700})
 check(merged.MaxStage==30 and merged.BestTime==500,"Concurrent stale write reduced record")
 merged=Schema.merge(merged,{MaxStage=50,Completed=true,BestTime=400})

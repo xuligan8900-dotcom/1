@@ -6,8 +6,15 @@ local Definitions = require(Shared.StageDefinitions)
 local Route = require(Shared.Route)
 local U = require(script.Parent.BuildUtil)
 local Builder = require(script.Parent.StageBuilder)
+local Recovery=require(script.Parent.RecoveryService)
 local Generator = {}
 function Generator.generate()
+	Recovery.configure()
+	Lighting.ClockTime=13.5
+	Lighting.Brightness=3.2
+	Lighting.Ambient=Color3.fromRGB(166,176,194)
+	Lighting.OutdoorAmbient=Color3.fromRGB(194,204,219)
+	Lighting.GlobalShadows=false
 	local existing=workspace:FindFirstChild("GeneratedTower")
 	if existing then
 		assert(existing:GetAttribute("Ready"),"Previous incomplete tower exists; stop Play before rebuilding")
@@ -18,23 +25,23 @@ function Generator.generate()
 	tower.Name="GeneratedTower"
 	tower:SetAttribute("Ready",false)
 	-- Parent only when the complete map is ready; auto character loading is disabled by bootstrap.
-	for _,name in {"Foundation","StructuralSupports","Stages","Checkpoints","KillZones","FinishArea","RouteGates"} do U.folder(tower,name) end
+	for _,name in {"Foundation","StructuralSupports","Stages","Checkpoints","KillZones","FinishArea","RouteGates","RecoveryFloors"} do U.folder(tower,name) end
 	U.part(tower.Foundation,"Foundation",Vector3.new(108,4,108),CFrame.new(0,0,0),Color3.fromRGB(35,40,50),Enum.Material.Concrete)
-	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(32,5,0))
-	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(32,3,-15))
-	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(32,4,-11))
+	U.part(tower.Foundation,"Lobby",Vector3.new(16,6,18),CFrame.new(36,5,0))
+	U.part(tower.Foundation,"LobbyStep1",Vector3.new(10,2,4),CFrame.new(36,3,-15))
+	U.part(tower.Foundation,"LobbyStep2",Vector3.new(10,4,4),CFrame.new(36,4,-11))
 	local spawn=Instance.new("SpawnLocation")
 	spawn.Name="LobbySpawn"
 	spawn.Size=Vector3.new(8,1,8)
-	spawn.CFrame=CFrame.new(32,8,0)
+	spawn.CFrame=CFrame.new(36,8,0)
 	spawn.Anchored=true
 	spawn.Neutral=true
 	spawn.Duration=0
 	spawn.Transparency=1
 	spawn.CanCollide=false
-	spawn.Enabled=false -- RespawnService positions characters explicitly, not the engine's random spawn selection.
+	spawn.Enabled=true -- Each player explicitly selects this or a completed checkpoint as RespawnLocation.
 	spawn.Parent=tower.Foundation
-	U.label(spawn,"MEGA MECHANICAL TOWER\n50 STAGES · FALLS ARE REAL",Config.ZoneColors[1])
+	U.label(spawn,"MEGA MECHANICAL TOWER\n50 STAGES · SAFETY FLOORS EVERY 5",Config.ZoneColors[1])
 	for _,x in {-47,47} do for _,z in {-47,47} do
 		U.part(tower.StructuralSupports,"MainColumn",Vector3.new(3,1010,3),CFrame.new(x,503,z))
 		U.part(tower.StructuralSupports,"ColumnLight",Vector3.new(0.25,1008,0.25),CFrame.new(x-1.6,503,z-1.6),Config.ZoneColors[5],Enum.Material.Neon,false)
@@ -53,6 +60,7 @@ function Generator.generate()
 		if humanoid then humanoid.Health=0 end
 	end)
 	for _,definition in Definitions do Builder.build(tower,definition) end
+	Recovery.build(tower)
 	local finish=tower.Checkpoints:FindFirstChild("Checkpoint_50")
 	local finishCF=finish.CFrame*CFrame.new(0,-0.12,-11)
 	U.part(tower.FinishArea,"CrownDeck",Vector3.new(26,1,22),finishCF*CFrame.new(0,-0.5,0),Color3.fromRGB(26,30,42))
@@ -78,9 +86,9 @@ function Generator.generate()
 		if not Lighting:FindFirstChild("Tower"..item) then
 			local effect=Instance.new(item)
 			effect.Name="Tower"..item
-			if item=="Atmosphere" then effect.Density=0.18; effect.Offset=0.15
+			if item=="Atmosphere" then effect.Density=0.07; effect.Offset=0.15
 			elseif item=="BloomEffect" then effect.Intensity=0.35; effect.Size=24; effect.Threshold=1.4
-			else effect.Contrast=0.08; effect.Saturation=-0.05 end
+			else effect.Contrast=0.02; effect.Saturation=0.06 end
 			effect.Parent=Lighting
 		end
 	end
