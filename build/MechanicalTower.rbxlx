@@ -800,6 +800,13 @@ local Economy=require(script.Parent.EconomyService)
 local Clubs=require(script.Parent.ClubService)
 local Service={}
 function Service.publish(player,p)
+	local stats=player:FindFirstChild("leaderstats") or Instance.new("Folder")
+	stats.Name="leaderstats"
+	stats.Parent=player
+	local stage=stats:FindFirstChild("Stage") or Instance.new("IntValue")
+	stage.Name="Stage"; stage.Value=p.MaxStage; stage.Parent=stats
+	local best=stats:FindFirstChild("BestTime") or Instance.new("StringValue")
+	best.Name="BestTime"; best.Value=if p.BestTime then string.format("%.1fs",p.BestTime) else "—"; best.Parent=stats
 	Recovery.update(player,p)
 	player:SetAttribute("RunStage",p.RunStage)
 	player:SetAttribute("MaxStage",p.MaxStage)
@@ -1472,7 +1479,7 @@ return Economy
           <string name="Source"><![CDATA[--!strict
 local Players=game:GetService("Players")
 Players.CharacterAutoLoads=false
-workspace:SetAttribute("TowerVersion","7.4")
+workspace:SetAttribute("TowerVersion","7.5")
 workspace:SetAttribute("TowerBootStatus","starting")
 workspace:SetAttribute("TowerBootError",nil)
 workspace:SetAttribute("TowerDiagnosticsPassed",nil)
@@ -1985,6 +1992,12 @@ function Generator.generate()
 		if humanoid then humanoid.Health=0 end
 	end)
 	for _,definition in Definitions do Builder.build(tower,definition) end
+	local secrets=U.folder(tower,"SecretRooms")
+	for index,cf in ipairs({CFrame.new(52,208,-18),CFrame.new(-54,508,16),CFrame.new(18,808,54)}) do
+		local room=U.part(secrets,"SecretRoom_"..index,Vector3.new(12,1,12),cf,Config.ZoneColors[(index%5)+1],Enum.Material.Neon,true)
+		room:SetAttribute("SecretRoom",true)
+		U.label(room,"SECRET ROOM\n+25 COINS",Config.ZoneColors[5])
+	end
 	Recovery.build(tower)
 	local finish=tower.Checkpoints:FindFirstChild("Checkpoint_50")
 	local finishCF=finish.CFrame*CFrame.new(0,-0.12,-11)

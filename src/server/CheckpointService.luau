@@ -7,6 +7,13 @@ local Economy=require(script.Parent.EconomyService)
 local Clubs=require(script.Parent.ClubService)
 local Service={}
 function Service.publish(player,p)
+	local stats=player:FindFirstChild("leaderstats") or Instance.new("Folder")
+	stats.Name="leaderstats"
+	stats.Parent=player
+	local stage=stats:FindFirstChild("Stage") or Instance.new("IntValue")
+	stage.Name="Stage"; stage.Value=p.MaxStage; stage.Parent=stats
+	local best=stats:FindFirstChild("BestTime") or Instance.new("StringValue")
+	best.Name="BestTime"; best.Value=if p.BestTime then string.format("%.1fs",p.BestTime) else "—"; best.Parent=stats
 	Recovery.update(player,p)
 	player:SetAttribute("RunStage",p.RunStage)
 	player:SetAttribute("MaxStage",p.MaxStage)

@@ -60,6 +60,12 @@ function Generator.generate()
 		if humanoid then humanoid.Health=0 end
 	end)
 	for _,definition in Definitions do Builder.build(tower,definition) end
+	local secrets=U.folder(tower,"SecretRooms")
+	for index,cf in ipairs({CFrame.new(52,208,-18),CFrame.new(-54,508,16),CFrame.new(18,808,54)}) do
+		local room=U.part(secrets,"SecretRoom_"..index,Vector3.new(12,1,12),cf,Config.ZoneColors[(index%5)+1],Enum.Material.Neon,true)
+		room:SetAttribute("SecretRoom",true)
+		U.label(room,"SECRET ROOM\n+25 COINS",Config.ZoneColors[5])
+	end
 	Recovery.build(tower)
 	local finish=tower.Checkpoints:FindFirstChild("Checkpoint_50")
 	local finishCF=finish.CFrame*CFrame.new(0,-0.12,-11)
