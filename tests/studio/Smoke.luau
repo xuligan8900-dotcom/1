@@ -47,6 +47,18 @@ function Test.run(tower)
 	assert(remotes.ShopGetState:IsA("RemoteFunction") and remotes.ShopRequest:IsA("RemoteEvent"),"Shop protocol missing")
 	assert(#tower.Checkpoints:GetChildren()==50)
 	assert(#tower.RouteGates:GetChildren()==100)
+	local slide=tower.FinishArea:FindFirstChild("VictoryWaterslide")
+	assert(slide and #slide:GetChildren()>=20,"Missing victory waterslide")
+	local slideSections=0
+	for _,part in slide:GetChildren() do
+		if part:IsA("BasePart") and part:GetAttribute("Waterslide") then
+			slideSections+=1
+			assert(part.Anchored and part.CanCollide,"Waterslide section is not physical")
+		end
+	end
+	assert(slideSections==12,"Incomplete waterslide")
+	assert(slide:FindFirstChild("DuckPool") and slide.DuckPool:GetAttribute("WaterslideWater"),"Missing duck pool")
+	for duck=1,3 do assert(slide:FindFirstChild("Duck_"..duck),"Missing pool duck") end
 	local count=0
 	for _,model in game:GetService("CollectionService"):GetTagged("TowerMechanism") do
 		if not model:IsDescendantOf(tower) then continue end
