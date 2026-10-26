@@ -20,9 +20,9 @@ end
 function Util.label(part, text, color)
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "Sign"
-	gui.Size = UDim2.fromOffset(240,60)
+	gui.Size = UDim2.fromOffset(190,42)
 	gui.StudsOffset = Vector3.new(0,4,0)
-	gui.MaxDistance = 95
+	gui.MaxDistance = 55
 	gui.AlwaysOnTop = false
 	gui.Parent = part
 	local label = Instance.new("TextLabel")

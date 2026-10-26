@@ -84,10 +84,6 @@ function Builder.build(tower, definition)
 			cp:SetAttribute("Stage",id)
 			cp:SetAttribute("Spawn",cf*CFrame.new(0,4,0))
 			U.label(cp,string.format("CHECKPOINT %02d / 50\n%s",id,definition.Name),accent)
-		elseif node%4==1 then
-			local sign = U.part(stage,"Direction",Vector3.new(0.15,0.15,0.15),cf*CFrame.new(0,2.5,0),accent,nil,false)
-			sign.Transparency=1
-			U.label(sign,"WAIT FOR GREEN\n⇧ JUMP",accent)
 		end
 	end
 	Walk.build(stage,definition,accent)
