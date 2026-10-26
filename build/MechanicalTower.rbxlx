@@ -1472,7 +1472,7 @@ return Economy
           <string name="Source"><![CDATA[--!strict
 local Players=game:GetService("Players")
 Players.CharacterAutoLoads=false
-workspace:SetAttribute("TowerVersion","7.1")
+workspace:SetAttribute("TowerVersion","7.2")
 workspace:SetAttribute("TowerBootStatus","starting")
 workspace:SetAttribute("TowerBootError",nil)
 workspace:SetAttribute("TowerDiagnosticsPassed",nil)
@@ -1987,42 +1987,6 @@ function Generator.generate()
 	local portal=U.part(tower.FinishArea,"VictoryPortal",Vector3.new(12,0.5,1),finishCF*CFrame.new(0,10,-6),Config.ZoneColors[5],Enum.Material.Neon,false)
 	for _,x in {-6,6} do U.part(tower.FinishArea,"PortalPillar",Vector3.new(0.5,10,1),finishCF*CFrame.new(x,5,-6),Config.ZoneColors[5],Enum.Material.Neon,false) end
 	U.label(portal,"YOU WIN!\nMASTER MECHANIC",Config.ZoneColors[5])
-	-- A long celebratory waterslide winds down around the tower to the lobby.
-	local slide=U.folder(tower.FinishArea,"VictoryWaterslide")
-	local slideColor=Color3.fromRGB(34,170,245)
-	local waterColor=Color3.fromRGB(40,190,235)
-	local start=finishCF*CFrame.new(0,3,-16).Position
-	local previous=start
-	local segments=62
-	for index=1,segments do
-		local t=index/segments
-		local angle=-math.pi*4+t*math.pi*4
-		local current=Vector3.new(math.cos(angle)*58, start.Y-(start.Y-14)*t, math.sin(angle)*58)
-		local delta=current-previous
-		local midpoint=previous+delta*0.5
-		local section=U.part(slide,"SlideSection_"..index,Vector3.new(5.4,0.55,delta.Magnitude+0.5),CFrame.lookAt(midpoint,current),slideColor,Enum.Material.SmoothPlastic,true)
-		section.CustomPhysicalProperties=PhysicalProperties.new(0.7,0.04,0,0.1,0)
-		section:SetAttribute("Waterslide",true)
-		previous=current
-	end
-	local poolCenter=CFrame.new(42,7,-13)
-	U.part(slide,"PoolDeck",Vector3.new(30,1,24),poolCenter,Color3.fromRGB(225,240,248),Enum.Material.Concrete,true)
-	local water=U.part(slide,"DuckPool",Vector3.new(27,0.35,21),poolCenter*CFrame.new(0,0.72,0),waterColor,Enum.Material.Glass,false)
-	water.Transparency=0.28
-	water:SetAttribute("WaterslideWater",true)
-	for _,x in {-14,14} do U.part(slide,"PoolRail",Vector3.new(0.45,2.5,24),poolCenter*CFrame.new(x,1.5,0),Color3.fromRGB(80,210,245),Enum.Material.Neon,true) end
-	for _,z in {-11,11} do U.part(slide,"PoolRail",Vector3.new(28,2.5,0.45),poolCenter*CFrame.new(0,1.5,z),Color3.fromRGB(80,210,245),Enum.Material.Neon,true) end
-	U.label(water,"DUCK SPLASH POOL",Color3.fromRGB(255,245,125))
-	for duckIndex,position in ipairs({Vector3.new(-6,1.4,-3),Vector3.new(1,1.4,4),Vector3.new(7,1.4,-5)}) do
-		local duck=U.folder(slide,"Duck_"..duckIndex)
-		local body=U.part(duck,"Body",Vector3.new(2.3,1.2,1.7),poolCenter*CFrame.new(position),Color3.fromRGB(255,220,45),Enum.Material.SmoothPlastic,false)
-		body.Shape=Enum.PartType.Ball
-		local head=U.part(duck,"Head",Vector3.new(1.15,1.15,1.15),poolCenter*CFrame.new(position+Vector3.new(0,0.8,-0.65)),Color3.fromRGB(255,235,65),Enum.Material.SmoothPlastic,false)
-		head.Shape=Enum.PartType.Ball
-		local beak=U.part(duck,"Beak",Vector3.new(0.65,0.3,0.5),poolCenter*CFrame.new(position+Vector3.new(0,0.75,-1.2)),Color3.fromRGB(255,130,35),Enum.Material.SmoothPlastic,false)
-		beak.Shape=Enum.PartType.Wedge
-	end
-	U.label(U.part(slide,"SlideSign",Vector3.new(0.5,0.5,0.5),finishCF*CFrame.new(0,5,-14),Color3.fromRGB(255,255,255),Enum.Material.Neon,false),"WATER SLIDE ↓ TO DUCK POOL",Color3.fromRGB(120,230,255))
 	local attachment=Instance.new("Attachment")
 	attachment.Position=Vector3.new(0,-4,0)
 	attachment.Parent=portal
@@ -2410,18 +2374,6 @@ function Test.run(tower)
 	assert(remotes.ShopGetState:IsA("RemoteFunction") and remotes.ShopRequest:IsA("RemoteEvent"),"Shop protocol missing")
 	assert(#tower.Checkpoints:GetChildren()==50)
 	assert(#tower.RouteGates:GetChildren()==100)
-	local slide=tower.FinishArea:FindFirstChild("VictoryWaterslide")
-	assert(slide and #slide:GetChildren()>=20,"Missing victory waterslide")
-	local slideSections=0
-	for _,part in slide:GetChildren() do
-		if part:IsA("BasePart") and part:GetAttribute("Waterslide") then
-			slideSections+=1
-			assert(part.Anchored and part.CanCollide,"Waterslide section is not physical")
-		end
-	end
-	assert(slideSections>=60,"Incomplete waterslide")
-	assert(slide:FindFirstChild("DuckPool") and slide.DuckPool:GetAttribute("WaterslideWater"),"Missing duck pool")
-	for duck=1,3 do assert(slide:FindFirstChild("Duck_"..duck),"Missing pool duck") end
 	local count=0
 	for _,model in game:GetService("CollectionService"):GetTagged("TowerMechanism") do
 		if not model:IsDescendantOf(tower) then continue end
