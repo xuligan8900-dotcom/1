@@ -1472,7 +1472,7 @@ return Economy
           <string name="Source"><![CDATA[--!strict
 local Players=game:GetService("Players")
 Players.CharacterAutoLoads=false
-workspace:SetAttribute("TowerVersion","7.2")
+workspace:SetAttribute("TowerVersion","7.3")
 workspace:SetAttribute("TowerBootStatus","starting")
 workspace:SetAttribute("TowerBootError",nil)
 workspace:SetAttribute("TowerDiagnosticsPassed",nil)
@@ -1831,6 +1831,13 @@ local Traps = require(script.Parent.TrapFactory)
 local Traversal=require(Shared.Traversal)
 local Walk=require(script.Parent.TraversalBuilder)
 local Builder = {}
+local zoneMaterials={
+	[1]=Enum.Material.Metal,
+	[2]=Enum.Material.Ice,
+	[3]=Enum.Material.Concrete,
+	[4]=Enum.Material.Brick,
+	[5]=Enum.Material.Glass,
+}
 function Builder.build(tower, definition)
 	local id = definition.Id
 	local stage = Instance.new("Model")
@@ -1858,6 +1865,9 @@ function Builder.build(tower, definition)
 			local p
 			if shape=="post" then p=Walk.post(stage,"Post_"..node,cf,width,accent)
 			else p=U.part(stage,"Landing_"..node,Vector3.new(width,1,depth),cf*CFrame.new(0,-0.5,0)) end
+			p.Material=zoneMaterials[definition.Zone] or Enum.Material.Metal
+			p.Reflectance=if definition.Zone==5 then 0.12 else 0.04
+			p:SetAttribute("ZoneMaterial",p.Material.Name)
 			U.part(stage,"RouteLight",Vector3.new(0.15,0.08,depth-0.3),cf*CFrame.new(-width/2+0.15,0.05,0),accent,Enum.Material.Neon,false)
 			if node%4==0 then
 				-- Side rails leave both route ends open and never close the fall shafts.
