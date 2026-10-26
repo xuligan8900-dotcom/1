@@ -68,24 +68,25 @@ function Generator.generate()
 	local portal=U.part(tower.FinishArea,"VictoryPortal",Vector3.new(12,0.5,1),finishCF*CFrame.new(0,10,-6),Config.ZoneColors[5],Enum.Material.Neon,false)
 	for _,x in {-6,6} do U.part(tower.FinishArea,"PortalPillar",Vector3.new(0.5,10,1),finishCF*CFrame.new(x,5,-6),Config.ZoneColors[5],Enum.Material.Neon,false) end
 	U.label(portal,"YOU WIN!\nMASTER MECHANIC",Config.ZoneColors[5])
-	-- A celebratory waterslide after the finish.  The slide is made from short,
-	-- anchored sections so it remains stable while still following a winding path.
+	-- A long celebratory waterslide winds down around the tower to the lobby.
 	local slide=U.folder(tower.FinishArea,"VictoryWaterslide")
 	local slideColor=Color3.fromRGB(34,170,245)
 	local waterColor=Color3.fromRGB(40,190,235)
-	local previous=finishCF*CFrame.new(0,3,-16)
-	for index=1,12 do
-		local z=-16-index*4.2
-		local x=math.sin(index*0.72)*7
-		local y=3-index*0.62
-		local current=finishCF*CFrame.new(x,y,z)
-		local delta=current.Position-previous.Position
-		local midpoint=previous.Position+delta*0.5
-		local section=U.part(slide,"SlideSection_"..index,Vector3.new(5.4,0.55,delta.Magnitude+0.5),CFrame.lookAt(midpoint,current.Position),slideColor,Enum.Material.SmoothPlastic,true)
+	local start=finishCF*CFrame.new(0,3,-16).Position
+	local previous=start
+	local segments=62
+	for index=1,segments do
+		local t=index/segments
+		local angle=-math.pi*4+t*math.pi*4
+		local current=Vector3.new(math.cos(angle)*58, start.Y-(start.Y-14)*t, math.sin(angle)*58)
+		local delta=current-previous
+		local midpoint=previous+delta*0.5
+		local section=U.part(slide,"SlideSection_"..index,Vector3.new(5.4,0.55,delta.Magnitude+0.5),CFrame.lookAt(midpoint,current),slideColor,Enum.Material.SmoothPlastic,true)
+		section.CustomPhysicalProperties=PhysicalProperties.new(0.7,0.04,0,0.1,0)
 		section:SetAttribute("Waterslide",true)
 		previous=current
 	end
-	local poolCenter=finishCF*CFrame.new(0,-5,-68)
+	local poolCenter=CFrame.new(42,7,-13)
 	U.part(slide,"PoolDeck",Vector3.new(30,1,24),poolCenter,Color3.fromRGB(225,240,248),Enum.Material.Concrete,true)
 	local water=U.part(slide,"DuckPool",Vector3.new(27,0.35,21),poolCenter*CFrame.new(0,0.72,0),waterColor,Enum.Material.Glass,false)
 	water.Transparency=0.28
@@ -102,7 +103,7 @@ function Generator.generate()
 		local beak=U.part(duck,"Beak",Vector3.new(0.65,0.3,0.5),poolCenter*CFrame.new(position+Vector3.new(0,0.75,-1.2)),Color3.fromRGB(255,130,35),Enum.Material.SmoothPlastic,false)
 		beak.Shape=Enum.PartType.Wedge
 	end
-	U.label(U.part(slide,"SlideSign",Vector3.new(0.5,0.5,0.5),finishCF*CFrame.new(0,5,-14),Color3.fromRGB(255,255,255),Enum.Material.Neon,false),"WATER SLIDE →",Color3.fromRGB(120,230,255))
+	U.label(U.part(slide,"SlideSign",Vector3.new(0.5,0.5,0.5),finishCF*CFrame.new(0,5,-14),Color3.fromRGB(255,255,255),Enum.Material.Neon,false),"WATER SLIDE ↓ TO DUCK POOL",Color3.fromRGB(120,230,255))
 	local attachment=Instance.new("Attachment")
 	attachment.Position=Vector3.new(0,-4,0)
 	attachment.Parent=portal

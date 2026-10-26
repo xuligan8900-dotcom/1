@@ -56,7 +56,7 @@ function Test.run(tower)
 			assert(part.Anchored and part.CanCollide,"Waterslide section is not physical")
 		end
 	end
-	assert(slideSections==12,"Incomplete waterslide")
+	assert(slideSections>=60,"Incomplete waterslide")
 	assert(slide:FindFirstChild("DuckPool") and slide.DuckPool:GetAttribute("WaterslideWater"),"Missing duck pool")
 	for duck=1,3 do assert(slide:FindFirstChild("Duck_"..duck),"Missing pool duck") end
 	local count=0
